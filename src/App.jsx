@@ -726,7 +726,7 @@ function LoginScreen({ users, onLogin }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((k, i) => (
-            <button key={i} onClick={() => k === '⌫' ? del() : k ? press(k) : null} style={{ ...S.btn, justifyContent: 'center', fontSize: 20, fontFamily: 'var(--mono)', padding: 16, opacity: k ? 1 : 0, pointerEvents: k ? 'auto' : 'none' }}>{k}</button>
+            <button key={i} onClick={() => k === '⌫' ? del() : k ? press(k) : null} className="keypad-btn" style={{ ...S.btn, justifyContent: 'center', fontSize: 20, fontFamily: 'var(--mono)', padding: 16, opacity: k ? 1 : 0, pointerEvents: k ? 'auto' : 'none' }}>{k}</button>
           ))}
         </div>
         {err && <div style={{ fontSize: 12, color: 'var(--red)', fontFamily: 'var(--mono)', marginTop: 14 }}>{err}</div>}
@@ -807,7 +807,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
 
 // ── HOME PAGE ──
 
-function HomePage({ user, announcements, myTasks, builds, users }) {
+function HomePage({ user, announcements, myTasks, myBuilds, builds, users }) {
   const hr = new Date().getHours()
   const g = hr < 12 ? 'Good morning ☀️' : hr < 17 ? 'Good afternoon ⚡' : 'Good evening 🌙'
   const open = myTasks.filter(t => !t.done)
@@ -846,8 +846,17 @@ function HomePage({ user, announcements, myTasks, builds, users }) {
           })}
         </div>
         <div style={{ ...S.card, marginBottom: 0 }}>
-          <div style={{ ...S.cardTitle, marginBottom: 10 }}>✅ My Tasks<span style={{ marginLeft: 8, fontSize: 10, padding: '2px 7px', borderRadius: 20, background: open.length > 0 ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)', color: open.length > 0 ? 'var(--amber)' : 'var(--green)', fontWeight: 500 }}>{open.length} open</span></div>
-          {open.length === 0 && <div style={{ fontSize: 13, color: 'var(--text2)', padding: '6px 0' }}>All caught up!</div>}
+          <div style={{ ...S.cardTitle, marginBottom: 10 }}>✅ My Tasks<span style={{ marginLeft: 8, fontSize: 10, padding: '2px 7px', borderRadius: 20, background: (open.length + (myBuilds||[]).length) > 0 ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)', color: (open.length + (myBuilds||[]).length) > 0 ? 'var(--amber)' : 'var(--green)', fontWeight: 500 }}>{open.length + (myBuilds||[]).length} open</span></div>
+          {(myBuilds||[]).map((b, i) => {
+            const sc = BUILD_STATUS_COLOR[b.status] || '#94a3b8'
+            return (
+              <div key={b.id} style={{ padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>🔨 {b.bike_description}</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}><span style={S.badge(sc)}>{b.status}</span>{b.customer_name && <span style={{ fontSize: 11, color: 'var(--text2)' }}>{b.customer_name}</span>}</div>
+              </div>
+            )
+          })}
+          {open.length === 0 && (myBuilds||[]).length === 0 && <div style={{ fontSize: 13, color: 'var(--text2)', padding: '6px 0' }}>All caught up!</div>}
           {open.map((t, i) => (
             <div key={t.id} style={{ padding: '9px 0', borderBottom: i < open.length - 1 ? '1px solid var(--border)' : 'none' }}>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
@@ -1852,13 +1861,35 @@ function BuildsPage({ user, users, builds, onAdd, onUpdate, onDelete }) {
   )
 }
 
-function TasksPage({ user, tasks, users, onToggle, onDelete, onReassign, isMgr }) {
+function TasksPage({ user, tasks, builds, users, onToggle, onDelete, onReassign, isMgr }) {
   const open = tasks.filter(t => !t.done)
   const done = tasks.filter(t => t.done)
   return (
     <div style={S.page}>
       <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>✅ My Tasks</div>
-      <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 22 }}>Tasks assigned to you</div>
+      <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 22 }}>Tasks and builds assigned to you</div>
+      {builds && builds.length > 0 && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>🔨 Assigned Builds ({builds.length})</div>
+          {builds.map(b => {
+            const sc = BUILD_STATUS_COLOR[b.status] || '#94a3b8'
+            return (
+              <div key={b.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 20, height: 20, borderRadius: 5, background: sc + '33', border: `1.5px solid ${sc}`, flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>🔨</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>{b.bike_description}</div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={S.badge(sc)}>{b.status}</span>
+                    {b.customer_name && <span style={{ fontSize: 11, color: 'var(--text2)' }}>{b.customer_name}</span>}
+                    {b.pickup_date && <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Pickup {fmtDate(b.pickup_date)}</span>}
+                  </div>
+                  {b.notes && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>{b.notes}</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
       <div style={S.card}><div style={S.cardTitle}>Open ({open.length})</div>{open.length === 0 && <div style={{ fontSize: 13, color: 'var(--text2)', padding: '8px 0' }}>No open tasks — all caught up.</div>}{open.map(t => <TItem key={t.id} task={t} user={user} users={users} onToggle={onToggle} onDelete={onDelete} onReassign={onReassign} isMgr={isMgr} />)}</div>
       {done.length > 0 && <div style={S.card}><div style={S.cardTitle}>✅ Completed ({done.length})</div>{done.map(t => <TItem key={t.id} task={t} user={user} users={users} onToggle={onToggle} onDelete={onDelete} onReassign={onReassign} isMgr={isMgr} />)}</div>}
     </div>
@@ -2003,6 +2034,7 @@ export default function App() {
   const isOwner = user?.role === 'owner'
   const isMgr = isOwner || user?.role === 'manager'
   const myTasks = tasks.filter(t => t.assigned_to === user?.id)
+  const myBuilds = builds.filter(b => b.assigned_to === user?.id && b.status !== 'Completed')
   const unread = messages.filter(m => !(m.read_by || []).includes(user?.id)).length
   const pendingBuilds = builds.filter(b => b.status !== 'Completed').length
 
@@ -2039,8 +2071,8 @@ export default function App() {
     <div style={S.shell}>
       <Sidebar user={user} page={page} setPage={setPage} unread={unread} onLock={lock} pendingBuilds={pendingBuilds} />
       <main style={S.main}>
-        <P id="home"><HomePage user={user} announcements={announcements} myTasks={myTasks} builds={builds} users={users} /></P>
-        <P id="tasks"><TasksPage user={user} tasks={myTasks} users={users} onToggle={toggleTask} onDelete={deleteTask} onReassign={reassignTask} isMgr={isMgr} /></P>
+        <P id="home"><HomePage user={user} announcements={announcements} myTasks={myTasks} myBuilds={myBuilds} builds={builds} users={users} /></P>
+        <P id="tasks"><TasksPage user={user} tasks={myTasks} builds={myBuilds} users={users} onToggle={toggleTask} onDelete={deleteTask} onReassign={reassignTask} isMgr={isMgr} /></P>
         <P id="timeclock"><TimeclockPage user={user} isMgr={isMgr} users={users} /></P>
         <P id="messages"><SendPage user={user} messages={messages} users={users} onSend={sendMsg} onRead={readMsg} /></P>
         <P id="builds"><BuildsPage user={user} users={users} builds={builds} onAdd={addBuild} onUpdate={updateBuild} onDelete={deleteBuild} /></P>
@@ -2096,6 +2128,8 @@ export default function App() {
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
         @media print{aside,button:not(.print-keep){display:none!important;}main{padding:0!important;}}
+        .keypad-btn:active{transform:scale(0.92);background:var(--accent)!important;color:white!important;transition:transform 0.08s,background 0.08s;}
+        .keypad-btn{transition:transform 0.08s,background 0.15s;}}
       `}</style>
   </>
   )
