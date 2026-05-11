@@ -1057,13 +1057,15 @@ function BroadcastPage({ user, announcements, onAdd, onDelete }) {
   const [form, setForm] = useState({ type: 'info', category: 'General', title: '', body: '', expires_at: '' })
   const [aiLoading, setAiLoading] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
+  const promptInputRef = useRef(null)
 
   const generateDraft = async () => {
-    if (!aiPrompt.trim()) return
+    const promptVal = promptInputRef.current ? promptInputRef.current.value.trim() : aiPrompt.trim()
+    if (!promptVal) return
     setAiLoading(true)
     try {
       const text = await askClaude(`You are writing a staff announcement for Cloud Ebikes, a bike shop in Vancouver at 1991 Main St. 
-Write a short, clear, professional announcement for staff based on this prompt: "${aiPrompt}"
+Write a short, clear, professional announcement for staff based on this prompt: "${promptVal}"
 Category hint: ${form.category}
 Keep it under 80 words. Write only the announcement body text, no title, no preamble.
 Vary the wording so it does not sound repetitive or robotic. Keep a friendly but professional tone.`)
@@ -1097,8 +1099,8 @@ Vary the wording so it does not sound repetitive or robotic. Keep a friendly but
               <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} style={{ ...S.select, width: 160, flexShrink: 0 }}>
                 {ANNOUNCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} placeholder={`e.g. "We are closed this Monday for Victoria Day"`} style={{ ...S.input, flex: 1 }} onKeyDown={e => e.key === 'Enter' && generateDraft()} />
-              <button onClick={generateDraft} disabled={aiLoading || !aiPrompt.trim()} style={{ ...S.btn, ...S.btnP, flexShrink: 0, opacity: aiLoading ? 0.6 : 1 }}>{aiLoading ? 'Drafting...' : '✨ Draft'}</button>
+              <input ref={promptInputRef} defaultValue="" placeholder={`e.g. "We are closed this Monday for Victoria Day"`} style={{ ...S.input, flex: 1 }} onKeyDown={e => e.key === 'Enter' && generateDraft()} />
+              <button onClick={generateDraft} disabled={aiLoading} style={{ ...S.btn, ...S.btnP, flexShrink: 0, opacity: aiLoading ? 0.6 : 1 }}>{aiLoading ? 'Drafting...' : '✨ Draft'}</button>
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 12 }}>
