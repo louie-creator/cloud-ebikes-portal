@@ -1071,16 +1071,16 @@ function BroadcastPage({ user, announcements, onAdd, onDelete }) {
         body: JSON.stringify({ action: 'claude', prompt: `You are writing a staff announcement for Cloud Ebikes, a bike shop in Vancouver at 1991 Main St. Write a short, clear, professional announcement for staff based on this prompt: "${prompt}". Keep it under 80 words. Write only the announcement body text, no title, no preamble. Keep a friendly but professional tone.` })
       })
       const d1 = await res.json()
-      const body = d1.text || ''
+      const body = (d1.text || d1.debug && JSON.parse(d1.debug)?.content?.[0]?.text || '').trim()
+      if (!body) { setAiError('No response — try again.'); setAiLoading(false); return }
       const res2 = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'claude', prompt: `Write a short 5-8 word title for this staff announcement: "${body}". Return only the title, nothing else.` })
       })
       const d2 = await res2.json()
-      const title = d2.text || ''
-      if (body) setForm(f => ({ ...f, body: body.trim(), title: title.trim() }))
-      else setAiError('No response from AI — try again.')
+      const title = (d2.text || '').trim()
+      setForm(f => ({ ...f, body, title }))
     } catch (e) {
       setAiError('Error: ' + e.message)
     }
