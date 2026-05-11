@@ -782,13 +782,6 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {L('Guides')}
         {N('workshop', 'Workshop Guides', '🔧')}
         {N('salesguide', 'Sales Guides', '💡')}
-        {N('diagnose', 'Diagnose Protocol', '🔍')}
-        {N('aventon', 'Aventon', '⚡')}
-        {N('gazelle', 'Gazelle', '🚲')}
-        {N('bosch', 'Bosch', '⚙️')}
-        {N('yuba', 'Yuba', '📦')}
-        {N('velotric', 'Velotric', '🔵')}
-        {N('ebikeguide', 'eBike Guide', '📖')}
         {N('warranty-submit', 'Submit Warranty', '🛡️')}
         {isMgr && <>
           {L('Management')}
@@ -2056,44 +2049,12 @@ export default function App() {
             <StoreOpenClose isMgr={isMgr} />
           </div>
         </P>
-        <P id="workshop">
-          <div style={S.page}>
-            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>🔧 Workshop Guides</div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Repair procedures, diagnostics, and electrical guides</div>
-            <RepairGuides isMgr={isMgr} />
-          </div>
-        </P>
+        <P id="workshop"><WorkshopGuidesPage isMgr={isMgr} /></P>
         <P id="salesguide">
           <div style={S.page}>
             <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>💡 Sales Guides</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>How to answer customer questions and handle objections — editable by management</div>
             <EditableSteps listKey="salesguide" defaultSections={DEFAULT_SALES_GUIDE} isMgr={isMgr} />
-          </div>
-        </P>
-        <P id="diagnose">
-          <div style={S.page}>
-            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>🔍 Diagnose Protocol</div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Follow this for every bike that comes in for service</div>
-            <EditableSteps listKey="diagnose" defaultSections={DIAGNOSE} isMgr={isMgr} />
-          </div>
-        </P>
-        <P id="aventon">
-          <div style={S.page}>
-            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>⚡ Aventon Guides</div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>Troubleshooting and service guides for Aventon ebikes</div>
-            <div style={{ marginBottom: 18 }}><a href="https://rideaventon.zendesk.com/hc/en-us/sections/28557324966427" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent2)', textDecoration: 'none', fontFamily: 'var(--mono)' }}>Full Aventon Help Desk ↗</a></div>
-            <EditableSteps listKey="aventon_guide" defaultSections={DEFAULT_AVENTON} isMgr={isMgr} />
-          </div>
-        </P>
-        <P id="gazelle"><BrandGuidePage title="Gazelle Guide" icon="🚲" listKey="gazelle_guide" externalLink="https://www.gazellebikes.com/en-us/service" externalLabel="Gazelle Service Site" isMgr={isMgr} /></P>
-        <P id="bosch"><BrandGuidePage title="Bosch Guide" icon="⚙️" listKey="bosch_guide" externalLink="https://www.bosch-ebike.com/en/service" externalLabel="Bosch eBike Service" isMgr={isMgr} /></P>
-        <P id="yuba"><BrandGuidePage title="Yuba Guide" icon="📦" listKey="yuba_guide" externalLink="https://yubabikes.com/support" externalLabel="Yuba Support" isMgr={isMgr} /></P>
-        <P id="velotric"><BrandGuidePage title="Velotric Guide" icon="🔵" listKey="velotric_guide" externalLink="https://www.velotricbike.com/pages/support" externalLabel="Velotric Support" isMgr={isMgr} /></P>
-        <P id="ebikeguide">
-          <div style={S.page}>
-            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>📖 eBike Guide</div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>General ebike knowledge for staff — editable by management</div>
-            <EditableSteps listKey="ebikeguide" defaultSections={DEFAULT_EBIKE_GUIDE} isMgr={isMgr} />
           </div>
         </P>
         {isMgr && <P id="assign"><AssignPage user={user} users={users} tasks={tasks} onAdd={addTask} onToggle={toggleTask} onDelete={deleteTask} onReassign={reassignTask} /></P>}
@@ -2123,6 +2084,60 @@ function StoreOpenClose({ isMgr }) {
       <TabRow tabs={[['open', '🔓 Opening'], ['close', '🔒 Closing']]} active={tab} setActive={setTab} />
       {tab === 'open' && <EditableChecklist listKey="opening" defaultItems={OPENING} isMgr={isMgr} />}
       {tab === 'close' && <EditableChecklist listKey="store_closing" defaultItems={STORE_CLOSING} isMgr={isMgr} />}
+    </div>
+  )
+}
+
+function BrandAccordion({ isMgr }) {
+  const [open, setOpen] = useState(null)
+  const brands = [
+    { id: 'aventon', label: 'Aventon', icon: '⚡', listKey: 'aventon_guide', defaultSections: DEFAULT_AVENTON, externalLink: 'https://rideaventon.zendesk.com/hc/en-us/sections/28557324966427', externalLabel: 'Full Aventon Help Desk' },
+    { id: 'gazelle', label: 'Gazelle', icon: '🚲', listKey: 'gazelle_guide', defaultSections: null, externalLink: 'https://www.gazellebikes.com/en-us/service', externalLabel: 'Gazelle Service Site' },
+    { id: 'bosch', label: 'Bosch', icon: '⚙️', listKey: 'bosch_guide', defaultSections: null, externalLink: 'https://www.bosch-ebike.com/en/service', externalLabel: 'Bosch eBike Service' },
+    { id: 'yuba', label: 'Yuba', icon: '📦', listKey: 'yuba_guide', defaultSections: null, externalLink: 'https://yubabikes.com/support', externalLabel: 'Yuba Support' },
+    { id: 'velotric', label: 'Velotric', icon: '🔵', listKey: 'velotric_guide', defaultSections: null, externalLink: 'https://www.velotricbike.com/pages/support', externalLabel: 'Velotric Support' },
+    { id: 'ebikeguide', label: 'eBike Guide', icon: '📖', listKey: 'ebikeguide', defaultSections: DEFAULT_EBIKE_GUIDE, externalLink: null },
+  ]
+  const toggle = (id) => setOpen(o => o === id ? null : id)
+  return (
+    <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Brand Guides</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        {brands.map(b => (
+          <button key={b.id} onClick={() => toggle(b.id)} style={{ ...S.btn, ...(open === b.id ? S.btnP : {}), fontSize: 13 }}>
+            {b.icon} {b.label} <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 2 }}>{open === b.id ? '▲' : '▼'}</span>
+          </button>
+        ))}
+      </div>
+      {brands.map(b => open === b.id && (
+        <div key={b.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', padding: '18px 20px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>{b.icon} {b.label}</div>
+            {b.externalLink && <a href={b.externalLink} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent2)', textDecoration: 'none', fontFamily: 'var(--mono)' }}>{b.externalLabel} ↗</a>}
+          </div>
+          <EditableSteps listKey={b.listKey} defaultSections={b.defaultSections || [{ title: 'Getting Started', steps: [{ title: 'Add your first section', desc: 'Click ✏️ Edit to start adding content.', img: '' }] }]} isMgr={isMgr} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WorkshopGuidesPage({ isMgr }) {
+  const [tab, setTab] = useState('ebike')
+  const tabs = {
+    ebike: { label: 'E-Bike Systems', key: 'repair_ebike', def: REPAIR_EBIKE },
+    mechanical: { label: 'Mechanical', key: 'repair_mechanical', def: REPAIR_MECHANICAL },
+    electrical: { label: 'Electrical', key: 'repair_electrical', def: REPAIR_ELECTRICAL },
+    diagnose: { label: 'Diagnose', key: 'diagnose', def: DIAGNOSE },
+  }
+  const cur = tabs[tab]
+  return (
+    <div style={S.page}>
+      <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>🔧 Workshop Guides</div>
+      <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Repair procedures, diagnostics, and brand-specific guides</div>
+      <TabRow tabs={Object.entries(tabs).map(([k, v]) => [k, v.label])} active={tab} setActive={setTab} />
+      <EditableSteps key={cur.key} listKey={cur.key} defaultSections={cur.def} isMgr={isMgr} />
+      <BrandAccordion isMgr={isMgr} />
     </div>
   )
 }
