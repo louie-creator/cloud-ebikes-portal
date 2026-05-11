@@ -2035,6 +2035,7 @@ export default function App() {
   const P = ({ id, children }) => page === id ? children : null
 
   return (
+    <>
     <div style={S.shell}>
       <Sidebar user={user} page={page} setPage={setPage} unread={unread} onLock={lock} pendingBuilds={pendingBuilds} />
       <main style={S.main}>
@@ -2085,8 +2086,9 @@ export default function App() {
         {isMgr && <P id="hours"><StaffHoursPage users={users} /></P>}
         {isOwner && <P id="users"><UsersPage users={users} onAdd={addUser} onToggle={toggleUser} onUpdate={updateUser} onDelete={deleteUser} /></P>}
       </main>
-      <FloatingChat page={page} user={user} onShipmentSaved={() => {}} />
-      <style>{`
+    </div>
+    <FloatingChat page={page} user={user} onShipmentSaved={() => {}} />
+    <style>{`
         :root{--bg:#0f1117;--bg2:#181c25;--bg3:#1e2330;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);--accent:#3b82f6;--accent2:#60a5fa;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--text:#f1f5f9;--text2:#94a3b8;--text3:#4b5563;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;--r:12px;--rs:8px;}
         *{box-sizing:border-box;margin:0;padding:0;}
         body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;}
@@ -2095,7 +2097,7 @@ export default function App() {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
         @media print{aside,button:not(.print-keep){display:none!important;}main{padding:0!important;}}
       `}</style>
-    </div>
+  </>
   )
 }
 
