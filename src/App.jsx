@@ -1057,22 +1057,32 @@ function BroadcastPage({ user, announcements, onAdd, onDelete }) {
   const [form, setForm] = useState({ type: 'info', category: 'General', title: '', body: '', expires_at: '' })
   const [aiLoading, setAiLoading] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
-  const promptInputRef = useRef(null)
+  const [aiError, setAiError] = useState('')
 
   const generateDraft = async () => {
-    const promptVal = promptInputRef.current ? promptInputRef.current.value.trim() : aiPrompt.trim()
-    if (!promptVal) return
+    const prompt = aiPrompt.trim()
+    if (!prompt) { setAiError('Please type a prompt first.'); return }
+    setAiError('')
     setAiLoading(true)
     try {
-      const text = await askClaude(`You are writing a staff announcement for Cloud Ebikes, a bike shop in Vancouver at 1991 Main St. 
-Write a short, clear, professional announcement for staff based on this prompt: "${promptVal}"
-Category hint: ${form.category}
-Keep it under 80 words. Write only the announcement body text, no title, no preamble.
-Vary the wording so it does not sound repetitive or robotic. Keep a friendly but professional tone.`)
-      const titleText = await askClaude(`Write a short 5-8 word title for this staff announcement: "${text}". Return only the title, nothing else.`)
-      setForm(f => ({ ...f, body: text.trim(), title: titleText.trim() }))
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'claude', prompt: `You are writing a staff announcement for Cloud Ebikes, a bike shop in Vancouver at 1991 Main St. Write a short, clear, professional announcement for staff based on this prompt: "${prompt}". Keep it under 80 words. Write only the announcement body text, no title, no preamble. Keep a friendly but professional tone.` })
+      })
+      const d1 = await res.json()
+      const body = d1.text || ''
+      const res2 = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'claude', prompt: `Write a short 5-8 word title for this staff announcement: "${body}". Return only the title, nothing else.` })
+      })
+      const d2 = await res2.json()
+      const title = d2.text || ''
+      if (body) setForm(f => ({ ...f, body: body.trim(), title: title.trim() }))
+      else setAiError('No response from AI — try again.')
     } catch (e) {
-      console.error(e)
+      setAiError('Error: ' + e.message)
     }
     setAiLoading(false)
   }
@@ -1099,8 +1109,10 @@ Vary the wording so it does not sound repetitive or robotic. Keep a friendly but
               <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} style={{ ...S.select, width: 160, flexShrink: 0 }}>
                 {ANNOUNCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input ref={promptInputRef} defaultValue="" placeholder={`e.g. "We are closed this Monday for Victoria Day"`} style={{ ...S.input, flex: 1 }} onKeyDown={e => e.key === 'Enter' && generateDraft()} />
+              <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} placeholder={`e.g. We are closed this Monday for Victoria Day`} style={{ ...S.input, flex: 1 }} onKeyDown={e => e.key === 'Enter' && generateDraft()} />
               <button onClick={generateDraft} disabled={aiLoading} style={{ ...S.btn, ...S.btnP, flexShrink: 0, opacity: aiLoading ? 0.6 : 1 }}>{aiLoading ? 'Drafting...' : '✨ Draft'}</button>
+            </div>
+            {aiError && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>{aiError}</div>}
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 12 }}>
