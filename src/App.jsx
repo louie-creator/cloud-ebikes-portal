@@ -1420,36 +1420,27 @@ function ShipmentsPage({ user, isMgr }) {
     if (!file) return
     setExtracting(true)
     try {
-      let invoiceUrl = ''
-      if (file.type.startsWith('image/')) {
-        invoiceUrl = await uploadToSupabase(file, 'invoices')
-      }
       const reader = new FileReader()
       reader.onload = async (e) => {
         const base64 = e.target.result.split(',')[1]
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
-                { type: 'text', text: 'Extract the key information from this supplier invoice. Return ONLY a JSON object with these fields: supplier (string), items (array of objects with name, qty, description), expected_date (string or null), notes (any relevant notes). No preamble, just JSON.' }
-              ]
-            }]
-          })
-        })
-        const data = await res.json()
-        const text = data?.content?.[0]?.text || '{}'
         try {
+          const res = await fetch(WORKER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'claude-image',
+              media_type: file.type,
+              image: base64,
+              prompt: 'Extract the key information from this supplier invoice. Return ONLY a JSON object with these fields: supplier (string), items (array of objects with name, qty, description), expected_date (string or null), notes (any relevant notes). No preamble, just JSON.'
+            })
+          })
+          const data = await res.json()
+          const text = data?.text || '{}'
           const clean = text.replace(/```json|```/g, '').trim()
           const parsed = JSON.parse(clean)
           setForm(f => ({ ...f, supplier: parsed.supplier || '', items: parsed.items || [], expected_date: parsed.expected_date || '', notes: parsed.notes || '' }))
         } catch (e) {
-          console.error('Parse error', e)
+          console.error('Extract error', e)
         }
         setExtracting(false)
       }
@@ -1947,7 +1938,12 @@ export default function App() {
   const [parts, setParts] = useState([])
   const [builds, setBuilds] = useState([])
   const [user, setUser] = useState(null)
-  const [page, setPage] = useState('home')
+  const [page, setPageState] = useState('home')
+
+  const setPage = (p) => {
+    setPageState(p)
+    localStorage.setItem('ce_page', p)
+  }
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
@@ -1964,7 +1960,7 @@ export default function App() {
     setUsers(lu); setTasks(t.data || []); setMessages(m.data || [])
     setAnnouncements(a.data || []); setBikes(b.data || []); setParts(p.data || []); setBuilds(bl.data || [])
     const saved = localStorage.getItem('ce_session')
-    if (saved) { try { const s = JSON.parse(saved); const live = lu.find(u => u.id === s.id && u.active); if (live) setUser(live); else localStorage.removeItem('ce_session') } catch { localStorage.removeItem('ce_session') } }
+    if (saved) { try { const s = JSON.parse(saved); const live = lu.find(u => u.id === s.id && u.active); if (live) { setUser(live); const savedPage = localStorage.getItem('ce_page'); if (savedPage) setPageState(savedPage) } else localStorage.removeItem('ce_session') } catch { localStorage.removeItem('ce_session') } }
     setLoading(false)
   }
 
@@ -2020,7 +2016,7 @@ export default function App() {
 
   if (loading) return <Spinner />
   if (!user) return <LoginScreen users={users} onLogin={u => { setUser(u); localStorage.setItem('ce_session', JSON.stringify(u)); setPage('home') }} />
-  const lock = () => { setUser(null); localStorage.removeItem('ce_session') }
+  const lock = () => { setUser(null); localStorage.removeItem('ce_session'); localStorage.removeItem('ce_page'); setPageState('home') }
   const P = ({ id, children }) => page === id ? children : null
 
   return (
