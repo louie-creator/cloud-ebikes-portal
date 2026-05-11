@@ -1439,18 +1439,7 @@ function ShipmentsPage({ user, isMgr }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'claude',
-          prompt: `Extract shipment information from this supplier invoice text. Return ONLY a valid JSON object with these fields:
-- supplier (string, company name)
-- items (array of objects with: name (string), qty (number))
-- expected_date (string YYYY-MM-DD or null)
-- tracking_numbers (array of strings, or empty array)
-- invoice_number (string or null)
-- notes (string with any other relevant info, or null)
-
-Invoice text:
-${fullText.slice(0, 6000)}
-
-Return only the JSON object, no explanation.`
+          prompt: `Extract shipment info from this invoice. Return ONLY a JSON object with: supplier (string), items (array of {name, qty}), expected_date (YYYY-MM-DD or null), tracking_numbers (array of strings), invoice_number (string or null), notes (string or null). Invoice text: ${fullText.slice(0, 2500)}`
         })
       })
       const d = await res.json()
