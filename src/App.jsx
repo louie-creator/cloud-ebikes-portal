@@ -2062,7 +2062,7 @@ export default function App() {
   const deleteBuild = async (id) => { setBuilds(p => p.filter(x => x.id !== id)); await sb.from('builds').delete().eq('id', id) }
 
   if (loading) return <Spinner />
-  if (!user) return <LoginScreen users={users} onLogin={u => { setUser(u); localStorage.setItem('ce_session', JSON.stringify(u)); setPage('home') }} />
+  if (!user) return <LoginScreen users={users} onLogin={u => { setUser(u); localStorage.setItem('ce_session', JSON.stringify(u)); const saved = localStorage.getItem('ce_page'); setPageState(saved || 'home') }} />
   const lock = () => { setUser(null); localStorage.removeItem('ce_session'); localStorage.removeItem('ce_page'); setPageState('home') }
   const P = ({ id, children }) => page === id ? children : null
 
