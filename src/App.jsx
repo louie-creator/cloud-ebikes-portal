@@ -1401,10 +1401,11 @@ function ShipmentsPage({ user, isMgr }) {
   const [shipments, setShipments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [file, setFile] = useState(null)
-  const [extracting, setExtracting] = useState(false)
   const [form, setForm] = useState({ supplier: '', items: [], expected_date: '', notes: '', status: 'In Transit' })
   const [saving, setSaving] = useState(false)
+  const [extracting, setExtracting] = useState(false)
+  const [extractErr, setExtractErr] = useState('')
+  const [fileName, setFileName] = useState('')
   const fileRef = useRef()
 
   const fetchShipments = async () => {
@@ -1416,52 +1417,67 @@ function ShipmentsPage({ user, isMgr }) {
 
   useEffect(() => { fetchShipments() }, [])
 
-  const extractFromInvoice = async () => {
-    if (!file) return
-    setExtracting(true)
+  const extractFromPDF = async (file) => {
+    setExtracting(true); setExtractErr(''); setFileName(file.name)
     try {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const base64 = e.target.result.split(',')[1]
-        try {
-          const res = await fetch(WORKER_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'claude-image',
-              media_type: file.type,
-              image: base64,
-              prompt: 'Extract the key information from this supplier invoice. Return ONLY a JSON object with these fields: supplier (string), items (array of objects with name, qty, description), expected_date (string or null), notes (any relevant notes). No preamble, just JSON.'
-            })
-          })
-          const data = await res.json()
-          const text = data?.text || '{}'
-          const clean = text.replace(/```json|```/g, '').trim()
-          const parsed = JSON.parse(clean)
-          setForm(f => ({ ...f, supplier: parsed.supplier || '', items: parsed.items || [], expected_date: parsed.expected_date || '', notes: parsed.notes || '' }))
-        } catch (e) {
-          console.error('Extract error', e)
-        }
-        setExtracting(false)
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+      document.head.appendChild(script)
+      await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject })
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let fullText = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        fullText += content.items.map(item => item.str).join(' ') + '\n'
       }
-      reader.readAsDataURL(file)
+      if (!fullText.trim()) { setExtractErr('Could not read text from this PDF. Try filling in manually.'); setExtracting(false); return }
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'claude',
+          prompt: `Extract shipment information from this supplier invoice text. Return ONLY a valid JSON object with these fields:
+- supplier (string, company name)
+- items (array of objects with: name (string), qty (number))
+- expected_date (string YYYY-MM-DD or null)
+- tracking_numbers (array of strings, or empty array)
+- invoice_number (string or null)
+- notes (string with any other relevant info, or null)
+
+Invoice text:
+${fullText.slice(0, 6000)}
+
+Return only the JSON object, no explanation.`
+        })
+      })
+      const d = await res.json()
+      const clean = (d.text || '').replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      setForm(f => ({
+        ...f,
+        supplier: parsed.supplier || '',
+        items: parsed.items || [],
+        expected_date: parsed.expected_date || '',
+        notes: [parsed.invoice_number ? `Invoice: ${parsed.invoice_number}` : '', parsed.tracking_numbers?.length ? `Tracking: ${parsed.tracking_numbers.join(', ')}` : '', parsed.notes || ''].filter(Boolean).join(' · ')
+      }))
     } catch (e) {
-      setExtracting(false)
+      setExtractErr('Failed to read PDF — fill in manually below.')
+      console.error(e)
     }
+    setExtracting(false)
   }
 
   const submit = async () => {
     if (!form.supplier.trim()) return
     setSaving(true)
-    let invoiceUrl = ''
-    if (file) {
-      try { invoiceUrl = await uploadToSupabase(file, 'invoices') } catch (e) { }
-    }
-    const item = { id: uid(), ...form, invoice_url: invoiceUrl, added_by: user.name, created_at: nowISO() }
+    const item = { id: uid(), ...form, added_by: user.name, created_at: nowISO() }
     await sb.from('shipments').insert(item)
     setShipments(s => [item, ...s])
     setForm({ supplier: '', items: [], expected_date: '', notes: '', status: 'In Transit' })
-    setFile(null); setSaving(false); setShowForm(false)
+    setFileName(''); setSaving(false); setShowForm(false)
   }
 
   const updateStatus = async (id, status) => {
@@ -1477,7 +1493,7 @@ function ShipmentsPage({ user, isMgr }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>📬 Incoming Shipments</div>
-          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Track what is on its way — upload an invoice and Claude reads it for you</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Upload an invoice PDF and Claude fills everything in automatically</div>
         </div>
         {isMgr && <button onClick={() => setShowForm(!showForm)} style={{ ...S.btn, ...S.btnP }}>+ Add Shipment</button>}
       </div>
@@ -1485,36 +1501,42 @@ function ShipmentsPage({ user, isMgr }) {
       {showForm && isMgr && (
         <div style={S.card}>
           <div style={S.cardTitle}>New Incoming Shipment</div>
-          <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--rs)', padding: '12px 14px', marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>✨ UPLOAD INVOICE — CLAUDE WILL READ IT</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={e => setFile(e.target.files[0])} style={{ display: 'none' }} />
-              <button onClick={() => fileRef.current?.click()} style={S.btn}>{file ? `📄 ${file.name}` : '📎 Choose Invoice'}</button>
-              {file && <button onClick={extractFromInvoice} disabled={extracting} style={{ ...S.btn, ...S.btnP, opacity: extracting ? 0.6 : 1 }}>{extracting ? 'Reading...' : '✨ Extract Info'}</button>}
-              {file && <button onClick={() => setFile(null)} style={{ ...S.btn, ...S.btnD, ...S.btnSm }}>✕</button>}
-            </div>
-            {extracting && <div style={{ fontSize: 12, color: 'var(--accent2)', marginTop: 8 }}>Claude is reading the invoice...</div>}
-          </div>
           <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--rs)', padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>✨ UPLOAD INVOICE PDF — CLAUDE READS IT AUTOMATICALLY</div>
+              <input ref={fileRef} type="file" accept="application/pdf" onChange={e => { if (e.target.files[0]) extractFromPDF(e.target.files[0]) }} style={{ display: 'none' }} />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={() => fileRef.current?.click()} disabled={extracting} style={{ ...S.btn, ...(extracting ? {} : S.btnP), opacity: extracting ? 0.6 : 1 }}>
+                  {extracting ? '⏳ Reading PDF...' : '📄 Upload Invoice PDF'}
+                </button>
+                {fileName && !extracting && <span style={{ fontSize: 12, color: 'var(--green)' }}>✓ {fileName} — form filled below</span>}
+              </div>
+              {extractErr && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>{extractErr}</div>}
+              {extracting && <div style={{ fontSize: 12, color: 'var(--accent2)', marginTop: 8 }}>Extracting text and parsing with Claude...</div>}
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>SUPPLIER</div><input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} placeholder="e.g. Leon Cycle" style={S.input} /></div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>SUPPLIER</div><input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} placeholder="e.g. HLC / Cycles Lambert" style={S.input} /></div>
               <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>EXPECTED DATE</div><input type="date" value={form.expected_date} onChange={e => setForm({ ...form, expected_date: e.target.value })} style={S.input} /></div>
             </div>
+
             <div>
-              <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>ITEMS IN SHIPMENT</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>ITEMS IN SHIPMENT ({form.items.length})</div>
               {form.items.map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                  <input value={item.name || ''} onChange={e => setForm(f => ({ ...f, items: f.items.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} placeholder="Item name" style={{ ...S.input, flex: 2 }} />
-                  <input value={item.qty || ''} onChange={e => setForm(f => ({ ...f, items: f.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) }))} placeholder="Qty" style={{ ...S.input, flex: 0, width: 60 }} />
+                  <input value={item.name || ''} onChange={e => setForm(f => ({ ...f, items: f.items.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} placeholder="Item name" style={{ ...S.input, flex: 3 }} />
+                  <input value={item.qty || ''} onChange={e => setForm(f => ({ ...f, items: f.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) }))} placeholder="Qty" style={{ ...S.input, width: 70, flex: 'none' }} />
                   <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))} style={{ ...S.btn, ...S.btnD, ...S.btnSm }}>✕</button>
                 </div>
               ))}
               <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { name: '', qty: 1 }] }))} style={{ ...S.btn, ...S.btnSm }}>+ Add Item</button>
             </div>
-            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>NOTES</div><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...S.textarea, minHeight: 60 }} /></div>
+
+            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>NOTES / TRACKING</div><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Invoice number, tracking numbers, notes..." style={{ ...S.textarea, minHeight: 60 }} /></div>
+
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={submit} disabled={saving} style={{ ...S.btn, ...S.btnP, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save Shipment'}</button>
-              <button onClick={() => setShowForm(false)} style={S.btn}>Cancel</button>
+              <button onClick={submit} disabled={saving || !form.supplier.trim()} style={{ ...S.btn, ...S.btnP, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save Shipment'}</button>
+              <button onClick={() => { setShowForm(false); setForm({ supplier: '', items: [], expected_date: '', notes: '', status: 'In Transit' }); setFileName(''); setExtractErr('') }} style={S.btn}>Cancel</button>
             </div>
           </div>
         </div>
@@ -1539,27 +1561,27 @@ function ShipmentsPage({ user, isMgr }) {
               </div>
               {s.items && s.items.length > 0 && (
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 6 }}>ITEMS</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 6 }}>ITEMS ({s.items.length})</div>
+                  <div style={{ display: 'grid', gap: 4 }}>
                     {s.items.map((item, i) => (
-                      <span key={i} style={{ fontSize: 12, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--rs)', padding: '3px 10px' }}>
-                        {item.name}{item.qty && ` ×${item.qty}`}
-                      </span>
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                        <span>{item.name}</span>
+                        <span style={{ color: 'var(--accent2)', fontFamily: 'var(--mono)', fontWeight: 600 }}>×{item.qty}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
-              {s.notes && <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--rs)' }}>{s.notes}</div>}
-              {s.invoice_url && <div style={{ marginTop: 10 }}><a href={s.invoice_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent2)', textDecoration: 'none' }}>📄 View Invoice ↗</a></div>}
+              {s.notes && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--rs)' }}>{s.notes}</div>}
             </div>
           ))}
           {completed.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 8 }}>COMPLETED SHIPMENTS ({completed.length})</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 8 }}>COMPLETED ({completed.length})</div>
               {completed.map(s => (
                 <div key={s.id} style={{ ...S.card, opacity: 0.5 }}>
                   <div style={{ fontSize: 14, fontWeight: 500 }}>{s.supplier} · {fmtDate(s.created_at)}</div>
-                  {s.items && s.items.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{s.items.map(i => i.name).join(', ')}</div>}
+                  {s.items && s.items.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{s.items.length} items</div>}
                 </div>
               ))}
             </div>
