@@ -1984,7 +1984,7 @@ export default function App() {
   const [parts, setParts] = useState([])
   const [builds, setBuilds] = useState([])
   const [user, setUser] = useState(null)
-  const [page, setPageState] = useState('home')
+  const [page, setPageState] = useState(() => localStorage.getItem('ce_page') || 'home')
 
   const setPage = (p) => {
     setPageState(p)
