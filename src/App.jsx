@@ -241,17 +241,13 @@ const DEFAULT_TEMPLATES = [
 // ── AI HELPER ──
 
 async function askClaude(prompt) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(WORKER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
-    })
+    body: JSON.stringify({ action: 'claude', prompt })
   })
   const data = await res.json()
-  return data?.content?.[0]?.text || ''
+  return data?.text || ''
 }
 
 async function uploadToSupabase(file, folder) {
