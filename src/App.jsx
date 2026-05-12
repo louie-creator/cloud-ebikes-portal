@@ -1122,7 +1122,6 @@ function BroadcastPage({ user, announcements, onAdd, onDelete }) {
               <button onClick={generateDraft} disabled={aiLoading} style={{ ...S.btn, ...S.btnP, flexShrink: 0, opacity: aiLoading ? 0.6 : 1 }}>{aiLoading ? 'Drafting...' : '✨ Draft'}</button>
             </div>
             {aiError && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>{aiError}</div>}
-            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 12 }}>
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>TYPE</div>
