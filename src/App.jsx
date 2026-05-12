@@ -745,7 +745,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const N = (id, label, icon, badge, bc) => (
-    <button style={S.navItem(page === id)} onClick={() => setPage(id)}>
+    <button style={S.navItem(page === id)} onClick={() => { setPage(id); localStorage.setItem('ce_page', id) }}>
       <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>{icon}</span>
       <span style={{ flex: 1 }}>{label}</span>
       {badge > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--mono)', padding: '1px 6px', borderRadius: 20, background: bc || 'var(--red)', color: 'white' }}>{badge}</span>}
@@ -2067,7 +2067,7 @@ export default function App() {
   const P = ({ id, children }) => page === id ? children : null
 
   return (
-    <>
+    <div style={{ position: 'relative', minHeight: '100vh' }}>
     <div style={S.shell}>
       <Sidebar user={user} page={page} setPage={setPage} unread={unread} onLock={lock} pendingBuilds={pendingBuilds} />
       <main style={S.main}>
@@ -2129,9 +2129,10 @@ export default function App() {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
         @media print{aside,button:not(.print-keep){display:none!important;}main{padding:0!important;}}
         .keypad-btn:active{transform:scale(0.92);background:var(--accent)!important;color:white!important;transition:transform 0.08s,background 0.08s;}
-        .keypad-btn{transition:transform 0.08s,background 0.15s;}}
+        .keypad-btn{transition:transform 0.08s,background 0.15s;}
       `}</style>
-  </>
+      <FloatingChat page={page} user={user} onShipmentSaved={() => {}} />
+    </div>
   )
 }
 
