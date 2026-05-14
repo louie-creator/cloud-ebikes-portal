@@ -1975,14 +1975,198 @@ function UsersPage({ users, onAdd, onToggle, onUpdate, onDelete }) {
 
 // ── FLOATING AI CHAT (CLOUD) ──
 
-const PAGE_CONTEXT = {
-  shipments: `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal. You are on the Incoming Shipments page. Your primary job is to read supplier invoices and log shipments. When the user uploads a PDF or describes a shipment, extract: supplier, all line items with quantities, ship date, invoice number, and tracking numbers. Then output the data in a SAVE_SHIPMENT block so the portal can save it. Always confirm what you saved.`,
-  home: `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal at 1991 Main St Vancouver. Help staff with anything — repair questions, product info, store policies, or general questions. Be concise and practical.`,
-  workshop: `You are Cloud, an AI assistant for Cloud Ebikes. You are on the Workshop Guides page. Help mechanics with repair questions, troubleshooting steps, or technical guidance for ebikes and regular bikes.`,
-  salesguide: `You are Cloud, an AI assistant for Cloud Ebikes. You are on the Sales Guides page. Help staff answer customer questions about ebikes — brakes, motors, cargo bikes, range, battery life, and objection handling.`,
-}
+const CLOUD_SYSTEM = (page, user, users, builds, tasks) => `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal (1991 Main St, Vancouver). The logged-in user is ${user?.name} (${user?.role}).
 
-function FloatingChat({ page, user, onShipmentSaved }) {
+Current page: ${page}
+
+You can take actions in the portal. When you want to take an action, output it as a JSON block like this:
+<ACTION>{"type":"ACTION_TYPE","data":{...}}</ACTION>
+
+Available actions:
+- assign_task: {"type":"assign_task","data":{"title":"...","notes":"...","priority":"high|medium|low","assigned_to_name":"..."}}
+- update_build_status: {"type":"update_build_status","data":{"bike_description_partial":"...","status":"..."}}
+- post_announcement: {"type":"post_announcement","data":{"title":"...","body":"...","type":"info|warn|alert|good","category":"General|Store Closure|Team Reminder|Sale|New Bike Features|Portal Update"}}
+- save_shipment: {"type":"save_shipment","data":{"supplier":"...","items":[{"name":"...","qty":1}],"expected_date":"YYYY-MM-DD or null","notes":"..."}}
+
+Known staff: ${users?.filter(u => u.active).map(u => u.name).join(', ')}
+Active builds: ${builds?.filter(b => b.status !== 'Completed').map(b => `${b.bike_description} (${b.status})`).slice(0, 10).join(', ')}
+
+Always confirm what action you took in plain language after the ACTION block. Be concise. If you are not sure who the user means, ask for clarification.`
+
+function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBuild, onAddAnnounce, onShipmentSaved }) {
+  const [open, setOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [fileLoading, setFileLoading] = useState(false)
+  const [attached, setAttached] = useState(null)
+  const fileRef = useRef()
+  const bottomRef = useRef()
+
+  useEffect(() => {
+    if (open && chatMessages.length === 0) {
+      setChatMessages([{ role: 'assistant', content: "Hi, I'm Cloud! I can answer questions, assign tasks, update builds, post announcements, and read invoices. What do you need?" }])
+    }
+  }, [open])
+
+  useEffect(() => { if (open) { setChatMessages([]); setInput(''); setAttached(null) } }, [page])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages, loading])
+
+  const handleFile = async (file) => {
+    setFileLoading(true)
+    setAttached({ name: file.name, type: file.type })
+    try {
+      if (file.type === 'application/pdf') {
+        if (!window.pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script')
+            s.src = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'
+            s.onload = resolve; s.onerror = reject
+            document.head.appendChild(s)
+          })
+        }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+        const arrayBuffer = await file.arrayBuffer()
+        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        let text = ''
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const p = await pdf.getPage(i)
+          const c = await p.getTextContent()
+          text += c.items.map(x => x.str).join(' ') + '\n'
+        }
+        setAttached({ name: file.name, type: file.type, content: text.slice(0, 4000) })
+      } else if (file.type.startsWith('text/') || file.name.endsWith('.csv')) {
+        const text = await file.text()
+        setAttached({ name: file.name, type: file.type, content: text.slice(0, 4000) })
+      } else {
+        setAttached({ name: file.name, type: file.type, content: null })
+      }
+    } catch (e) {
+      setAttached({ name: file.name, type: file.type, content: null })
+    }
+    setFileLoading(false)
+  }
+
+  const executeAction = async (action) => {
+    const { type, data } = action
+    if (type === 'assign_task') {
+      const assignee = users?.find(u => u.active && u.name.toLowerCase().includes((data.assigned_to_name || '').toLowerCase()))
+      if (!assignee) return `Could not find staff member "${data.assigned_to_name}".`
+      await onAddTask({ title: data.title, notes: data.notes || '', priority: data.priority || 'medium', assigned_to: assignee.id, assigned_by: user.id, due_date: '' })
+      return `✅ Task "${data.title}" assigned to ${assignee.name}.`
+    }
+    if (type === 'update_build_status') {
+      const build = builds?.find(b => b.bike_description?.toLowerCase().includes((data.bike_description_partial || '').toLowerCase()) && b.status !== 'Completed')
+      if (!build) return `Could not find an active build matching "${data.bike_description_partial}".`
+      await onUpdateBuild(build.id, { status: data.status })
+      return `✅ Updated "${build.bike_description}" to ${data.status}.`
+    }
+    if (type === 'post_announcement') {
+      await onAddAnnounce({ type: data.type || 'info', category: data.category || 'General', title: data.title, body: data.body, expires_at: '' })
+      return `✅ Announcement "${data.title}" posted to all staff.`
+    }
+    if (type === 'save_shipment') {
+      const item = { id: uid(), ...data, status: 'In Transit', added_by: user.name, created_at: nowISO() }
+      await sb.from('shipments').insert(item)
+      if (onShipmentSaved) onShipmentSaved()
+      return `✅ Shipment from ${data.supplier} saved with ${data.items?.length || 0} items.`
+    }
+    return null
+  }
+
+  const send = async (overrideMsg, skipBubble) => {
+    const userMsg = overrideMsg || input.trim()
+    if (!userMsg && !attached) return
+    if (loading) return
+    const displayMsg = userMsg + (attached ? `\n📎 ${attached.name}` : '')
+    if (!skipBubble) setChatMessages(m => [...m, { role: 'user', content: displayMsg }])
+    setInput(''); setLoading(true)
+
+    const history = chatMessages.slice(-8).map(m => `${m.role === 'user' ? 'User' : 'Cloud'}: ${m.content}`).join('\n')
+    const fileContext = attached?.content ? `\n\nAttached file "${attached.name}":\n${attached.content}` : attached ? `\n\nUser attached file: ${attached.name} (content not readable as text)` : ''
+    const prompt = `${CLOUD_SYSTEM(page, user, users, builds, tasks)}\n\nConversation:\n${history}\nUser: ${userMsg}${fileContext}\nCloud:`
+
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'claude', prompt })
+      })
+      const d = await res.json()
+      let reply = (d.text || 'Sorry, no response.').trim()
+
+      const actionMatch = reply.match(/<ACTION>([\s\S]*?)<\/ACTION>/)
+      if (actionMatch) {
+        try {
+          const actionData = JSON.parse(actionMatch[1].trim())
+          const result = await executeAction(actionData)
+          reply = reply.replace(/<ACTION>[\s\S]*?<\/ACTION>/, '').trim()
+          if (result) reply = (reply ? reply + '\n\n' : '') + result
+        } catch (e) {
+          reply = reply.replace(/<ACTION>[\s\S]*?<\/ACTION>/, '').trim()
+        }
+      }
+
+      setChatMessages(m => [...m, { role: 'assistant', content: reply || 'Done.' }])
+      setAttached(null)
+    } catch (e) {
+      setChatMessages(m => [...m, { role: 'assistant', content: 'Error reaching Cloud AI.' }])
+    }
+    setLoading(false)
+  }
+
+  return (
+    <>
+      <button onClick={() => setOpen(o => !o)} style={{ position: 'fixed', bottom: 24, right: 24, width: 54, height: 54, borderRadius: '50%', background: open ? '#1e2330' : 'var(--accent)', border: '2px solid var(--border2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, boxShadow: '0 4px 24px rgba(59,130,246,0.4)', zIndex: 9999 }}>
+        {open ? '✕' : '⚡'}
+      </button>
+      {open && (
+        <div style={{ position: 'fixed', bottom: 90, right: 24, width: 360, height: 520, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 16, display: 'flex', flexDirection: 'column', zIndex: 9999, boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Cloud</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>AI Assistant · Cloud Ebikes</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {chatMessages.map((m, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{ maxWidth: '88%', padding: '9px 13px', borderRadius: m.role === 'user' ? '14px 14px 3px 14px' : '14px 14px 14px 3px', background: m.role === 'user' ? 'var(--accent)' : 'var(--bg3)', border: m.role === 'assistant' ? '1px solid var(--border)' : 'none', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
+              </div>
+            ))}
+            {(loading || fileLoading) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ padding: '9px 13px', borderRadius: '14px 14px 14px 3px', background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 14, height: 14, border: '2px solid var(--border2)', borderTop: '2px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  {fileLoading ? 'Reading file...' : 'Cloud is thinking...'}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {attached && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg3)', borderRadius: 'var(--rs)', border: '1px solid var(--border2)' }}>
+                <span style={{ fontSize: 12, color: 'var(--accent2)', flex: 1 }}>📎 {attached.name}</span>
+                <button onClick={() => setAttached(null)} style={{ ...S.btn, ...S.btnD, ...S.btnSm, padding: '2px 6px' }}>✕</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input ref={fileRef} type="file" accept=".pdf,.csv,.txt,.xlsx" onChange={e => { if (e.target.files[0]) { handleFile(e.target.files[0]); e.target.value = '' } }} style={{ display: 'none' }} />
+              <button onClick={() => fileRef.current?.click()} disabled={fileLoading || loading} title="Attach file" style={{ ...S.btn, ...S.btnSm, padding: '8px 10px', opacity: (fileLoading || loading) ? 0.5 : 1 }}>📎</button>
+              <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && !fileLoading && send()} placeholder="Assign tasks, update builds, ask anything..." style={{ ...S.input, flex: 1, fontSize: 12 }} disabled={loading || fileLoading} />
+              <button onClick={() => send()} disabled={loading || fileLoading || (!input.trim() && !attached)} style={{ ...S.btn, ...S.btnP, ...S.btnSm, opacity: (loading || (!input.trim() && !attached)) ? 0.5 : 1 }}>↑</button>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', textAlign: 'center' }}>
+              Try: "Assign Ben to clean the workshop" · "Mark Aventon Pace as Ready for Pickup"
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
   const [open, setOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState([])
   const [input, setInput] = useState('')
@@ -2262,7 +2446,7 @@ export default function App() {
         {isOwner && <P id="users"><UsersPage users={users} onAdd={addUser} onToggle={toggleUser} onUpdate={updateUser} onDelete={deleteUser} /></P>}
       </main>
     </div>
-    <FloatingChat page={page} user={user} onShipmentSaved={() => {}} />
+    <FloatingChat page={page} user={user} users={users} builds={builds} tasks={tasks} onAddTask={addTask} onUpdateBuild={updateBuild} onAddAnnounce={addAnnounce} onShipmentSaved={() => {}} />
     <style>{`
         :root{--bg:#0f1117;--bg2:#181c25;--bg3:#1e2330;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);--accent:#3b82f6;--accent2:#60a5fa;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--text:#f1f5f9;--text2:#94a3b8;--text3:#4b5563;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;--r:12px;--rs:8px;}
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -2323,106 +2507,136 @@ function BrandAccordion({ isMgr }) {
   )
 }
 
-function VendorStockPage() {
-  const VELOTRIC_CSV = 'https://docs.google.com/spreadsheets/d/1liGRm6SL43ZgaIqr5a3-skX2Inm8b-8KApla07w5UCE/export?format=csv&gid=0'
+// ── VENDOR STOCK PAGE ──
+
+const VENDORS = [
+  { id: 'velotric', label: 'Velotric', icon: '🔵', csvUrl: 'https://docs.google.com/spreadsheets/d/1liGRm6SL43ZgaIqr5a3-skX2Inm8b-8KApla07w5UCE/export?format=csv&gid=0' },
+  { id: 'hlc', label: 'HLC', icon: '🚲', csvUrl: null },
+  { id: 'aventon', label: 'Aventon', icon: '⚡', csvUrl: null },
+  { id: 'yuba', label: 'Yuba', icon: '📦', csvUrl: null },
+]
+
+function parseCSV(text) {
+  return text.trim().split('\n').map(line => {
+    const result = []; let cur = '', inQ = false
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ }
+      else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = '' }
+      else cur += ch
+    }
+    result.push(cur.trim())
+    return result
+  })
+}
+
+function VendorSheetView({ vendor }) {
   const [rows, setRows] = useState([])
-  const [headers, setHeaders] = useState([])
+  const [etaHeaders, setEtaHeaders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [lastUpdated, setLastUpdated] = useState(null)
+  const [updatedAt, setUpdatedAt] = useState('')
 
   const fetchData = async () => {
     setLoading(true); setError('')
     try {
-      const res = await fetch(VELOTRIC_CSV)
+      const res = await fetch(vendor.csvUrl)
       if (!res.ok) throw new Error('Could not load sheet')
-      const text = await res.text()
-      const lines = text.trim().split('\n').map(l => l.split(',').map(c => c.replace(/^"|"$/g, '').trim()))
-      const sheetTitle = lines[0]?.[0] || ''
+      const lines = parseCSV(await res.text())
+      // Row 0: update date in A1, Row 1: headers (Name, SKU, In Stock, ETA dates...), Row 2+: data
+      setUpdatedAt(lines[0]?.[0] || '')
       const headerRow = lines[1] || []
-      const dataRows = lines.slice(2).filter(r => r.some(c => c))
-      setHeaders(headerRow)
-      setRows(dataRows)
-      setLastUpdated(sheetTitle)
+      setEtaHeaders(headerRow.slice(3).filter(h => h.trim()))
+      setRows(lines.slice(2).filter(r => r[0]?.trim()))
     } catch (e) {
-      setError('Could not load Velotric inventory. Check your connection.')
+      setError('Could not load inventory — check your connection.')
     }
     setLoading(false)
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [vendor.id])
 
-  const filtered = rows.filter(r => !search || r[0]?.toLowerCase().includes(search.toLowerCase()))
-  const etaCols = headers.slice(3)
+  const filtered = rows.filter(r => !search.trim() || r[0]?.toLowerCase().includes(search.toLowerCase()))
 
-  const stockColor = (val) => {
+  const qtyStyle = (val, bold) => {
     const n = parseInt(val)
-    if (isNaN(n) || n === 0) return 'var(--text3)'
-    if (n >= 5) return 'var(--green)'
-    return 'var(--amber)'
+    const color = isNaN(n) || n === 0 ? 'var(--text3)' : n >= 5 ? 'var(--green)' : 'var(--amber)'
+    return { padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontFamily: 'var(--mono)', color, fontWeight: bold ? 700 : 400 }
   }
 
+  if (loading) return <div style={{ fontSize: 13, color: 'var(--text2)', padding: '24px 0' }}>Loading {vendor.label} inventory...</div>
+  if (error) return <div style={{ ...S.card, color: 'var(--red)', marginTop: 8 }}>{error}</div>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${vendor.label} models...`} style={{ ...S.input, maxWidth: 300 }} />
+        <button onClick={fetchData} style={S.btn}>↺ Refresh</button>
+        {updatedAt && <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Updated: {updatedAt}</span>}
+      </div>
+      <div style={S.card}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg3)' }}>
+                <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)', minWidth: 220 }}>Model</th>
+                <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)' }}>SKU</th>
+                <th style={{ textAlign: 'center', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' }}>In Stock</th>
+                {etaHeaders.map((h, i) => (
+                  <th key={i} style={{ textAlign: 'center', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--accent2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' }}>
+                    📦 {h.replace(/ETA\s*/i, '').trim()}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={3 + etaHeaders.length} style={{ padding: '20px 12px', color: 'var(--text3)', fontSize: 13 }}>No models found.</td></tr>}
+              {filtered.map((row, i) => {
+                const inStock = parseInt(row[2]) || 0
+                return (
+                  <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                    <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontWeight: inStock > 0 ? 600 : 400 }}>{row[0]}</td>
+                    <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>{row[1]}</td>
+                    <td style={qtyStyle(row[2], true)}>{inStock > 0 ? inStock : '—'}</td>
+                    {etaHeaders.map((_, ci) => {
+                      const val = row[3 + ci]
+                      const n = parseInt(val) || 0
+                      return <td key={ci} style={qtyStyle(val, false)}>{n > 0 ? n : '—'}</td>
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10, fontFamily: 'var(--mono)' }}>
+          {filtered.length} models · Green = 5+ in stock · Amber = low · ETA columns show units arriving on that date
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VendorStockPage() {
+  const [activeVendor, setActiveVendor] = useState('velotric')
+  const vendor = VENDORS.find(v => v.id === activeVendor)
   return (
     <div style={S.page}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 600 }}>📊 Vendor Stock</div>
-          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Live inventory from Velotric{lastUpdated ? ` · ${lastUpdated}` : ''}</div>
-        </div>
-        <button onClick={fetchData} disabled={loading} style={{ ...S.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Loading...' : '↺ Refresh'}</button>
+      <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>📊 Vendor Stock</div>
+      <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Live inventory and estimated arrival dates from your suppliers</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+        {VENDORS.map(v => (
+          <button key={v.id} onClick={() => setActiveVendor(v.id)} style={{ ...S.btn, ...(activeVendor === v.id ? S.btnP : {}), fontSize: 13 }}>
+            {v.icon} {v.label}
+            {!v.csvUrl && <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>—</span>}
+          </button>
+        ))}
       </div>
-      {error && <div style={{ ...S.card, color: 'var(--red)', marginBottom: 14 }}>{error}</div>}
-      <div style={{ marginBottom: 14 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by model name..." style={S.input} />
-      </div>
-      {loading ? (
-        <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading inventory...</div>
+      {vendor?.csvUrl ? (
+        <VendorSheetView key={activeVendor} vendor={vendor} />
       ) : (
-        <div style={S.card}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)', minWidth: 200 }}>Model</th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)' }}>SKU</th>
-                  <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)' }}>In Stock</th>
-                  {etaCols.map((h, i) => (
-                    <th key={i} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--accent2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((row, i) => {
-                  if (!row[0]) return (
-                    <tr key={i}><td colSpan={3 + etaCols.length} style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }} /></tr>
-                  )
-                  const inStock = parseInt(row[2]) || 0
-                  return (
-                    <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontWeight: 500 }}>{row[0]}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>{row[1]}</td>
-                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: inStock > 0 ? 'var(--green)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>
-                        {inStock > 0 ? inStock : '—'}
-                      </td>
-                      {etaCols.map((_, ci) => {
-                        const val = row[3 + ci]
-                        const n = parseInt(val) || 0
-                        return (
-                          <td key={ci} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontFamily: 'var(--mono)', color: stockColor(val) }}>
-                            {n > 0 ? n : '—'}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, fontFamily: 'var(--mono)' }}>
-            {filtered.length} models · Live from Velotric · Tap Refresh for latest
-          </div>
+        <div style={{ ...S.card, color: 'var(--text2)', fontSize: 13 }}>
+          No live sheet connected for {vendor?.label} yet. Ask the owner to add the Google Sheet CSV link.
         </div>
       )}
     </div>
