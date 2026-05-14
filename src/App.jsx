@@ -768,8 +768,6 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {N('messages', 'Send Message', '💬')}
         {L('Store')}
         {N('announcements', 'Announcements', '📢')}
-        {N('opening', 'Store Open/Close', '🔓')}
-        {N('checklist', 'Daily Checklist', '📋')}
         {N('builds', 'Bike Builds', '🔨', pendingBuilds, 'var(--amber)')}
         {N('templates', 'Message Templates', '💬')}
         {N('parts', 'Parts to Order', '🔩')}
@@ -778,6 +776,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {N('vendor-stock', 'Vendor Stock', '📊')}
         {L('Guides')}
         {N('workshop', 'Workshop Guides', '🔧')}
+        {N('service-notes', 'Service Notes', '📋')}
         {N('salesguide', 'Sales Guides', '💡')}
         {N('warranty-submit', 'Submit Warranty', '🛡️')}
         {isMgr && <>
@@ -1975,7 +1974,7 @@ function UsersPage({ users, onAdd, onToggle, onUpdate, onDelete }) {
 
 // ── FLOATING AI CHAT (CLOUD) ──
 
-function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBuild, onAddAnnounce, onShipmentSaved }) {
+function FloatingChat({ page, user, users, builds, onAddTask, onUpdateBuild, onAddAnnounce, onShipmentSaved }) {
   const [open, setOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState([])
   const [input, setInput] = useState('')
@@ -1987,7 +1986,7 @@ function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBui
 
   useEffect(() => {
     if (open && chatMessages.length === 0) {
-      setChatMessages([{ role: 'assistant', content: "Hi, I'm Cloud! I can answer questions, assign tasks, update builds, post announcements, and read invoices. What do you need?" }])
+      setChatMessages([{ role: 'assistant', content: "Hi, I'm Cloud! I can answer questions, assign tasks, update builds, post announcements, and read invoices. Attach a file with 📎 or just type." }])
     }
   }, [open])
 
@@ -1996,7 +1995,7 @@ function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBui
 
   const handleFile = async (file) => {
     setFileLoading(true)
-    setAttached({ name: file.name, type: file.type })
+    setAttached({ name: file.name, type: file.type, content: null })
     try {
       if (file.type === 'application/pdf') {
         if (!window.pdfjsLib) {
@@ -2012,12 +2011,11 @@ function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBui
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise
         let text = ''
         for (let i = 1; i <= pdf.numPages; i++) {
-          const p = await pdf.getPage(i)
-          const c = await p.getTextContent()
+          const p = await pdf.getPage(i); const c = await p.getTextContent()
           text += c.items.map(x => x.str).join(' ') + '\n'
         }
         setAttached({ name: file.name, type: file.type, content: text.slice(0, 4000) })
-      } else if (file.type.startsWith('text/') || file.name.endsWith('.csv')) {
+      } else if (file.type.startsWith('text/') || file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
         const text = await file.text()
         setAttached({ name: file.name, type: file.type, content: text.slice(0, 4000) })
       } else {
@@ -2032,20 +2030,20 @@ function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBui
   const executeAction = async (action) => {
     const { type, data } = action
     if (type === 'assign_task') {
-      const assignee = users?.find(u => u.active && u.name.toLowerCase().includes((data.assigned_to_name || '').toLowerCase()))
-      if (!assignee) return `Could not find staff member "${data.assigned_to_name}".`
+      const assignee = (users || []).find(u => u.active && u.name.toLowerCase().includes((data.assigned_to_name || '').toLowerCase()))
+      if (!assignee) return `Could not find staff member "${data.assigned_to_name}". Known staff: ${(users||[]).filter(u=>u.active).map(u=>u.name).join(', ')}`
       await onAddTask({ title: data.title, notes: data.notes || '', priority: data.priority || 'medium', assigned_to: assignee.id, assigned_by: user.id, due_date: '' })
-      return `✅ Task "${data.title}" assigned to ${assignee.name}.`
+      return `✅ Task assigned to ${assignee.name}.`
     }
     if (type === 'update_build_status') {
-      const build = builds?.find(b => b.bike_description?.toLowerCase().includes((data.bike_description_partial || '').toLowerCase()) && b.status !== 'Completed')
+      const build = (builds || []).find(b => b.bike_description?.toLowerCase().includes((data.bike_description_partial || '').toLowerCase()) && b.status !== 'Completed')
       if (!build) return `Could not find an active build matching "${data.bike_description_partial}".`
       await onUpdateBuild(build.id, { status: data.status })
       return `✅ Updated "${build.bike_description}" to ${data.status}.`
     }
     if (type === 'post_announcement') {
       await onAddAnnounce({ type: data.type || 'info', category: data.category || 'General', title: data.title, body: data.body, expires_at: '' })
-      return `✅ Announcement "${data.title}" posted to all staff.`
+      return `✅ Announcement posted to all staff.`
     }
     if (type === 'save_shipment') {
       const item = { id: uid(), ...data, status: 'In Transit', added_by: user.name, created_at: nowISO() }
@@ -2065,55 +2063,43 @@ function FloatingChat({ page, user, users, builds, tasks, onAddTask, onUpdateBui
     setInput(''); setLoading(true)
 
     const history = chatMessages.slice(-8).map(m => `${m.role === 'user' ? 'User' : 'Cloud'}: ${m.content}`).join('\n')
-    const fileContext = attached?.content ? `\n\nAttached file "${attached.name}":\n${attached.content}` : attached ? `\n\nUser attached file: ${attached.name} (content not readable as text)` : ''
-
+    const fileContext = attached?.content ? `\n\nAttached file "${attached.name}":\n${attached.content}` : attached ? `\n\nUser attached: ${attached.name} (binary, content not readable)` : ''
     const activeStaff = (users || []).filter(u => u.active).map(u => u.name).join(', ')
     const activeBuilds = (builds || []).filter(b => b.status !== 'Completed').map(b => `${b.bike_description} (${b.status})`).slice(0, 10).join(', ')
 
-    const systemPrompt = `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal (1991 Main St, Vancouver). The logged-in user is ${user?.name} (${user?.role}).
+    const systemPrompt = `You are Cloud, an AI assistant in the Cloud Ebikes staff portal (1991 Main St Vancouver). Logged in: ${user?.name} (${user?.role}).
 
-You CAN take actions directly in this portal. When you want to take an action, output it as a JSON block exactly like this:
+You CAN take actions in this portal. Output actions as:
 <ACTION>{"type":"ACTION_TYPE","data":{...}}</ACTION>
 
-Available actions and their exact format:
-- assign_task: <ACTION>{"type":"assign_task","data":{"title":"task title","notes":"optional notes","priority":"high|medium|low","assigned_to_name":"exact staff name"}}</ACTION>
-- update_build_status: <ACTION>{"type":"update_build_status","data":{"bike_description_partial":"part of bike name","status":"Waiting for Bike|Bike Ordered|Bike Arrived|Build in Progress|Ready for Pickup|Completed|On Hold"}}</ACTION>
-- post_announcement: <ACTION>{"type":"post_announcement","data":{"title":"short title","body":"announcement text","type":"info|warn|alert|good","category":"General|Store Closure|Team Reminder|Sale|New Bike Features|Portal Update"}}</ACTION>
-- save_shipment: <ACTION>{"type":"save_shipment","data":{"supplier":"supplier name","items":[{"name":"item name","qty":1}],"expected_date":"YYYY-MM-DD or null","notes":"any notes"}}</ACTION>
+Actions available:
+- assign_task: data = {title, notes, priority:"high|medium|low", assigned_to_name}
+- update_build_status: data = {bike_description_partial, status:"Waiting for Bike|Bike Ordered|Bike Arrived|Build in Progress|Ready for Pickup|Completed|On Hold"}
+- post_announcement: data = {title, body, type:"info|warn|alert|good", category:"General|Store Closure|Team Reminder|Sale|New Bike Features|Portal Update"}
+- save_shipment: data = {supplier, items:[{name,qty}], expected_date:"YYYY-MM-DD or null", notes}
 
-Current staff (use exact names): ${activeStaff || 'none loaded'}
+Active staff: ${activeStaff || 'none'}
 Active builds: ${activeBuilds || 'none'}
 
-Always confirm what you did after the ACTION block. Be concise and take action immediately when the request is clear.`
+Take action immediately when the request is clear. Confirm what you did after the ACTION block. Be concise.`
 
     const prompt = `${systemPrompt}\n\nConversation:\n${history}\nUser: ${userMsg}${fileContext}\nCloud:`
 
     try {
-      const res = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'claude', prompt })
-      })
+      const res = await fetch(WORKER_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'claude', prompt }) })
       const d = await res.json()
       let reply = (d.text || 'Sorry, no response.').trim()
-
       const actionMatch = reply.match(/<ACTION>([\s\S]*?)<\/ACTION>/)
       if (actionMatch) {
         try {
-          const actionData = JSON.parse(actionMatch[1].trim())
-          const result = await executeAction(actionData)
+          const result = await executeAction(JSON.parse(actionMatch[1].trim()))
           reply = reply.replace(/<ACTION>[\s\S]*?<\/ACTION>/, '').trim()
           if (result) reply = (reply ? reply + '\n\n' : '') + result
-        } catch (e) {
-          reply = reply.replace(/<ACTION>[\s\S]*?<\/ACTION>/, '').trim()
-        }
+        } catch (e) { reply = reply.replace(/<ACTION>[\s\S]*?<\/ACTION>/, '').trim() }
       }
-
       setChatMessages(m => [...m, { role: 'assistant', content: reply || 'Done.' }])
       setAttached(null)
-    } catch (e) {
-      setChatMessages(m => [...m, { role: 'assistant', content: 'Error reaching Cloud AI.' }])
-    }
+    } catch (e) { setChatMessages(m => [...m, { role: 'assistant', content: 'Error reaching Cloud AI.' }]) }
     setLoading(false)
   }
 
@@ -2150,18 +2136,153 @@ Always confirm what you did after the ACTION block. Be concise and take action i
           <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {attached && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg3)', borderRadius: 'var(--rs)', border: '1px solid var(--border2)' }}>
-                <span style={{ fontSize: 12, color: 'var(--accent2)', flex: 1 }}>📎 {attached.name}</span>
+                <span style={{ fontSize: 12, color: 'var(--accent2)', flex: 1 }}>📎 {attached.name}{attached.content ? '' : ' (attached)'}</span>
                 <button onClick={() => setAttached(null)} style={{ ...S.btn, ...S.btnD, ...S.btnSm, padding: '2px 6px' }}>✕</button>
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
-              <input ref={fileRef} type="file" accept=".pdf,.csv,.txt,.xlsx" onChange={e => { if (e.target.files[0]) { handleFile(e.target.files[0]); e.target.value = '' } }} style={{ display: 'none' }} />
+              <input ref={fileRef} type="file" accept=".pdf,.csv,.txt" onChange={e => { if (e.target.files[0]) { handleFile(e.target.files[0]); e.target.value = '' } }} style={{ display: 'none' }} />
               <button onClick={() => fileRef.current?.click()} disabled={fileLoading || loading} title="Attach file" style={{ ...S.btn, ...S.btnSm, padding: '8px 10px', opacity: (fileLoading || loading) ? 0.5 : 1 }}>📎</button>
-              <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && !fileLoading && send()} placeholder="Assign tasks, update builds, ask anything..." style={{ ...S.input, flex: 1, fontSize: 12 }} disabled={loading || fileLoading} />
+              <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && !fileLoading && send()} placeholder="Assign tasks, ask anything..." style={{ ...S.input, flex: 1, fontSize: 12 }} disabled={loading || fileLoading} />
               <button onClick={() => send()} disabled={loading || fileLoading || (!input.trim() && !attached)} style={{ ...S.btn, ...S.btnP, ...S.btnSm, opacity: (loading || (!input.trim() && !attached)) ? 0.5 : 1 }}>↑</button>
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', textAlign: 'center' }}>
-              Try: "Assign Ben to clean the workshop" · "Mark Aventon Pace as Ready for Pickup"
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+  shipments: `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal. You are on the Incoming Shipments page. Your primary job is to read supplier invoices and log shipments. When the user uploads a PDF or describes a shipment, extract: supplier, all line items with quantities, ship date, invoice number, and tracking numbers. Then output the data in a SAVE_SHIPMENT block so the portal can save it. Always confirm what you saved.`,
+  home: `You are Cloud, an AI assistant built into the Cloud Ebikes staff portal at 1991 Main St Vancouver. Help staff with anything — repair questions, product info, store policies, or general questions. Be concise and practical.`,
+  workshop: `You are Cloud, an AI assistant for Cloud Ebikes. You are on the Workshop Guides page. Help mechanics with repair questions, troubleshooting steps, or technical guidance for ebikes and regular bikes.`,
+  salesguide: `You are Cloud, an AI assistant for Cloud Ebikes. You are on the Sales Guides page. Help staff answer customer questions about ebikes — brakes, motors, cargo bikes, range, battery life, and objection handling.`,
+}
+
+function FloatingChat({ page, user, onShipmentSaved }) {
+  const [open, setOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const fileRef = useRef()
+  const bottomRef = useRef()
+  const isShipments = page === 'shipments'
+  const context = PAGE_CONTEXT[page] || PAGE_CONTEXT.home
+
+  useEffect(() => {
+    if (open && chatMessages.length === 0) {
+      const greeting = isShipments
+        ? "Hi, I'm Cloud! Upload an invoice PDF and I'll read it and log the shipment automatically."
+        : "Hi, I'm Cloud! How can I help?"
+      setChatMessages([{ role: 'assistant', content: greeting }])
+    }
+  }, [open])
+
+  useEffect(() => { if (open) { setChatMessages([]); setInput('') } }, [page])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages, loading])
+
+  const loadPDF = async (file) => {
+    setPdfLoading(true)
+    setChatMessages(m => [...m, { role: 'user', content: `📄 ${file.name}` }])
+    try {
+      if (!window.pdfjsLib) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script')
+          s.src = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'
+          s.onload = resolve; s.onerror = reject
+          document.head.appendChild(s)
+        })
+      }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let text = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const p = await pdf.getPage(i)
+        const c = await p.getTextContent()
+        text += c.items.map(x => x.str).join(' ') + '\n'
+      }
+      setPdfLoading(false)
+      if (!text.trim()) { setChatMessages(m => [...m, { role: 'assistant', content: "Could not read text from that PDF. Try describing the shipment instead." }]); return }
+      await send(`Invoice PDF uploaded: ${file.name}. Text:\n${text.slice(0, 3000)}`, true)
+    } catch (e) {
+      setPdfLoading(false)
+      setChatMessages(m => [...m, { role: 'assistant', content: "Could not read that PDF. Try describing the shipment instead." }])
+    }
+  }
+
+  const send = async (overrideMsg, skipBubble) => {
+    const userMsg = overrideMsg || input.trim()
+    if (!userMsg || loading) return
+    if (!skipBubble) setChatMessages(m => [...m, { role: 'user', content: userMsg }])
+    setInput(''); setLoading(true)
+    const history = chatMessages.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Cloud'}: ${m.content}`).join('\n')
+    const saveNote = isShipments ? `\n\nWhen you have shipment data, output it as:\n<SAVE_SHIPMENT>{"supplier":"...","items":[{"name":"...","qty":1}],"expected_date":"YYYY-MM-DD or null","notes":"invoice and tracking info"}</SAVE_SHIPMENT>` : ''
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'claude', prompt: `${context}${saveNote}\n\n${history}\nUser: ${userMsg}\nCloud:` })
+      })
+      const d = await res.json()
+      const reply = (d.text || 'Sorry, no response.').trim()
+      const saveMatch = reply.match(/<SAVE_SHIPMENT>([\s\S]*?)<\/SAVE_SHIPMENT>/)
+      if (saveMatch && isShipments) {
+        try {
+          const parsed = JSON.parse(saveMatch[1].trim())
+          const item = { id: uid(), ...parsed, status: 'In Transit', added_by: user.name, created_at: nowISO() }
+          await sb.from('shipments').insert(item)
+          const clean = reply.replace(/<SAVE_SHIPMENT>[\s\S]*?<\/SAVE_SHIPMENT>/, '').trim()
+          setChatMessages(m => [...m, { role: 'assistant', content: (clean || 'Done!') + '\n\n✅ Shipment saved.' }])
+          if (onShipmentSaved) onShipmentSaved()
+        } catch (e) { setChatMessages(m => [...m, { role: 'assistant', content: reply }]) }
+      } else {
+        setChatMessages(m => [...m, { role: 'assistant', content: reply }])
+      }
+    } catch (e) { setChatMessages(m => [...m, { role: 'assistant', content: 'Error reaching Cloud AI.' }]) }
+    setLoading(false)
+  }
+
+  return (
+    <>
+      <button onClick={() => setOpen(o => !o)} style={{ position: 'fixed', bottom: 24, right: 24, width: 54, height: 54, borderRadius: '50%', background: open ? '#1e2330' : 'var(--accent)', border: '2px solid var(--border2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, boxShadow: '0 4px 24px rgba(59,130,246,0.4)', zIndex: 9999 }}>
+        {open ? '✕' : '⚡'}
+      </button>
+      {open && (
+        <div style={{ position: 'fixed', bottom: 90, right: 24, width: 340, height: 480, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 16, display: 'flex', flexDirection: 'column', zIndex: 9999, boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>⚡</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Cloud</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>{isShipments ? 'Shipments mode' : 'AI Assistant'}</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {chatMessages.map((m, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{ maxWidth: '88%', padding: '9px 13px', borderRadius: m.role === 'user' ? '14px 14px 3px 14px' : '14px 14px 14px 3px', background: m.role === 'user' ? 'var(--accent)' : 'var(--bg3)', border: m.role === 'assistant' ? '1px solid var(--border)' : 'none', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
+              </div>
+            ))}
+            {(loading || pdfLoading) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ padding: '9px 13px', borderRadius: '14px 14px 14px 3px', background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 14, height: 14, border: '2px solid var(--border2)', borderTop: '2px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  {pdfLoading ? 'Reading PDF...' : 'Cloud is thinking...'}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {isShipments && (
+              <>
+                <input ref={fileRef} type="file" accept="application/pdf" onChange={e => { if (e.target.files[0]) { loadPDF(e.target.files[0]); e.target.value = '' } }} style={{ display: 'none' }} />
+                <button onClick={() => fileRef.current?.click()} disabled={pdfLoading || loading} style={{ ...S.btn, ...S.btnSm, width: '100%', justifyContent: 'center', fontSize: 12, opacity: (pdfLoading || loading) ? 0.6 : 1 }}>📄 Upload Invoice PDF</button>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && !pdfLoading && send()} placeholder={isShipments ? 'Describe a shipment...' : 'Ask Cloud anything...'} style={{ ...S.input, flex: 1, fontSize: 12 }} disabled={loading || pdfLoading} />
+              <button onClick={() => send()} disabled={loading || pdfLoading || !input.trim()} style={{ ...S.btn, ...S.btnP, ...S.btnSm, opacity: (loading || !input.trim()) ? 0.5 : 1 }}>↑</button>
             </div>
           </div>
         </div>
@@ -2302,6 +2423,7 @@ export default function App() {
           </div>
         </P>
         <P id="workshop"><WorkshopGuidesPage isMgr={isMgr} /></P>
+        <P id="service-notes"><ServiceNotesPage /></P>
         <P id="salesguide">
           <div style={S.page}>
             <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>💡 Sales Guides</div>
@@ -2317,7 +2439,7 @@ export default function App() {
         {isOwner && <P id="users"><UsersPage users={users} onAdd={addUser} onToggle={toggleUser} onUpdate={updateUser} onDelete={deleteUser} /></P>}
       </main>
     </div>
-    <FloatingChat page={page} user={user} users={users} builds={builds} tasks={tasks} onAddTask={addTask} onUpdateBuild={updateBuild} onAddAnnounce={addAnnounce} onShipmentSaved={() => {}} />
+    <FloatingChat page={page} user={user} users={users} builds={builds} onAddTask={addTask} onUpdateBuild={updateBuild} onAddAnnounce={addAnnounce} onShipmentSaved={() => {}} />
     <style>{`
         :root{--bg:#0f1117;--bg2:#181c25;--bg3:#1e2330;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);--accent:#3b82f6;--accent2:#60a5fa;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--text:#f1f5f9;--text2:#94a3b8;--text3:#4b5563;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;--r:12px;--rs:8px;}
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -2414,7 +2536,6 @@ function VendorSheetView({ vendor }) {
       const res = await fetch(vendor.csvUrl)
       if (!res.ok) throw new Error('Could not load sheet')
       const lines = parseCSV(await res.text())
-      // Row 0: update date in A1, Row 1: headers (Name, SKU, In Stock, ETA dates...), Row 2+: data
       setUpdatedAt(lines[0]?.[0] || '')
       const headerRow = lines[1] || []
       setEtaHeaders(headerRow.slice(3).filter(h => h.trim()))
@@ -2455,7 +2576,7 @@ function VendorSheetView({ vendor }) {
                 <th style={{ textAlign: 'center', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' }}>In Stock</th>
                 {etaHeaders.map((h, i) => (
                   <th key={i} style={{ textAlign: 'center', padding: '10px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--accent2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' }}>
-                    📦 {h.replace(/ETA\s*/i, '').trim()}
+                    📦 ETA {h.replace(/ETA\s*/i, '').trim()}
                   </th>
                 ))}
               </tr>
@@ -2498,8 +2619,7 @@ function VendorStockPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
         {VENDORS.map(v => (
           <button key={v.id} onClick={() => setActiveVendor(v.id)} style={{ ...S.btn, ...(activeVendor === v.id ? S.btnP : {}), fontSize: 13 }}>
-            {v.icon} {v.label}
-            {!v.csvUrl && <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>—</span>}
+            {v.icon} {v.label}{!v.csvUrl && <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 4 }}>—</span>}
           </button>
         ))}
       </div>
@@ -2507,7 +2627,196 @@ function VendorStockPage() {
         <VendorSheetView key={activeVendor} vendor={vendor} />
       ) : (
         <div style={{ ...S.card, color: 'var(--text2)', fontSize: 13 }}>
-          No live sheet connected for {vendor?.label} yet. Ask the owner to add the Google Sheet CSV link.
+          No live sheet connected for {vendor?.label} yet.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── SERVICE NOTES BUILDER ──
+
+const SERVICE_ITEMS = {
+  'Brakes': [
+    'Checked brake pads — within spec',
+    'Checked brake pads — worn, replaced',
+    'Checked brake rotors — true and clean',
+    'Checked brake rotors — replaced',
+    'Adjusted brake caliper alignment',
+    'Bled hydraulic brake lines — front',
+    'Bled hydraulic brake lines — rear',
+    'Adjusted brake cable tension',
+    'Checked brake lever reach and feel',
+    'Tested brakes — stopping power confirmed',
+  ],
+  'Drivetrain': [
+    'Checked chain stretch — within spec',
+    'Checked chain stretch — replaced chain',
+    'Checked cassette — within spec',
+    'Checked cassette — replaced',
+    'Checked chainring — within spec',
+    'Checked chainring — replaced',
+    'Adjusted front derailleur',
+    'Adjusted rear derailleur',
+    'Lubricated chain',
+    'Cleaned drivetrain components',
+    'Checked bottom bracket — no play',
+    'Checked crankarms — tightened',
+  ],
+  'Wheels & Tires': [
+    'Checked tire pressure — inflated to spec',
+    'Checked tire condition — good',
+    'Checked tire condition — worn, replaced',
+    'Checked for punctures — none found',
+    'Repaired puncture / replaced tube',
+    'Checked wheel true — within spec',
+    'Trued wheel — front',
+    'Trued wheel — rear',
+    'Checked quick release / thru axle — secure',
+    'Checked spoke tension — adjusted',
+  ],
+  'eBike Systems': [
+    'Checked battery charge level',
+    'Checked battery connections — secure',
+    'Tested pedal assist — all levels functioning',
+    'Tested throttle — functioning',
+    'Checked display — functioning',
+    'Read and cleared error codes',
+    'Checked motor connections — secure',
+    'Tested motor output — normal',
+    'Checked charger port — clean and undamaged',
+    'Firmware checked / updated',
+  ],
+  'Frame & Components': [
+    'Checked headset — adjusted',
+    'Checked stem — tightened to spec',
+    'Checked handlebars — tightened to spec',
+    'Checked seatpost — tightened to spec',
+    'Checked saddle — level and secure',
+    'Checked pedals — tight',
+    'Checked frame — no cracks or damage',
+    'Checked fork — no damage',
+    'Lubricated pivot points',
+    'Cleaned and detailed bike',
+  ],
+  'General': [
+    'Performed full safety inspection',
+    'Road tested — all systems normal',
+    'Customer advised of additional items noted but not repaired',
+    'Customer approved all work before starting',
+    'Bike ready for pickup',
+  ],
+}
+
+function ServiceNotesPage() {
+  const [tab, setTab] = useState('Brakes')
+  const [selected, setSelected] = useState([])
+  const [customerName, setCustomerName] = useState('')
+  const [bikeDesc, setBikeDesc] = useState('')
+  const [extraNote, setExtraNote] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const tabs = Object.keys(SERVICE_ITEMS)
+  const toggle = (item) => setSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
+  const isSelected = (item) => selected.includes(item)
+
+  const buildReport = () => {
+    const lines = []
+    if (customerName || bikeDesc) {
+      lines.push(`SERVICE REPORT`)
+      if (customerName) lines.push(`Customer: ${customerName}`)
+      if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
+      lines.push(`Date: ${new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}`)
+      lines.push('')
+    }
+    lines.push('Work Performed:')
+    if (selected.length === 0) lines.push('— No items selected')
+    selected.forEach(item => lines.push(`• ${item}`))
+    if (extraNote.trim()) { lines.push(''); lines.push('Additional Notes:'); lines.push(extraNote.trim()) }
+    return lines.join('\n')
+  }
+
+  const copy = () => {
+    navigator.clipboard.writeText(buildReport()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  const reset = () => { setSelected([]); setCustomerName(''); setBikeDesc(''); setExtraNote(''); setCopied(false) }
+
+  const groupedSelected = tabs.map(t => ({
+    tab: t,
+    items: selected.filter(s => SERVICE_ITEMS[t].includes(s))
+  })).filter(g => g.items.length > 0)
+
+  return (
+    <div style={S.page}>
+      <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>📋 Service Notes Builder</div>
+      <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 22 }}>Select what was done — generates a clean service report for the customer</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>CUSTOMER NAME</div><input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="e.g. John Smith" style={S.input} /></div>
+        <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE</div><input value={bikeDesc} onChange={e => setBikeDesc(e.target.value)} placeholder="e.g. Aventon Pace 500 — Blue" style={S.input} /></div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        {tabs.map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: tab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${tab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t}
+            {SERVICE_ITEMS[t].some(i => selected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {SERVICE_ITEMS[tab].map(item => (
+            <div key={item} onClick={() => toggle(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: isSelected(item) ? 'rgba(59,130,246,0.1)' : 'var(--bg3)', border: `1px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border)'}`, transition: 'all 0.15s' }}>
+              <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border2)'}`, background: isSelected(item) ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {isSelected(item) && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+              </div>
+              <span style={{ fontSize: 13, color: isSelected(item) ? 'var(--text)' : 'var(--text2)' }}>{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>Additional Notes</div>
+        <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="Any additional work or observations not listed above..." style={{ ...S.textarea, minHeight: 60 }} />
+      </div>
+
+      {selected.length > 0 && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={S.cardTitle}>Report Preview ({selected.length} items)</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={reset} style={{ ...S.btn, ...S.btnSm }}>↺ Reset</button>
+              <button onClick={copy} style={{ ...S.btn, ...S.btnSm, ...(copied ? S.btnG : S.btnP) }}>{copied ? '✓ Copied!' : '📋 Copy Report'}</button>
+            </div>
+          </div>
+          {customerName && <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Customer: <strong style={{ color: 'var(--text)' }}>{customerName}</strong>{bikeDesc && <> · {bikeDesc}</>}</div>}
+          <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Work Performed</div>
+          {groupedSelected.map(g => (
+            <div key={g.tab} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.tab}</div>
+              {g.items.map(item => (
+                <div key={item} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '4px 0', color: 'var(--text2)' }}>
+                  <span style={{ color: 'var(--green)' }}>•</span> {item}
+                </div>
+              ))}
+            </div>
+          ))}
+          {extraNote.trim() && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Additional Notes</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)' }}>{extraNote}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selected.length === 0 && (
+        <div style={{ ...S.card, color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
+          Select items above to build the service report
         </div>
       )}
     </div>
