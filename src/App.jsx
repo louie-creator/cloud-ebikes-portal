@@ -775,6 +775,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {N('parts', 'Parts to Order', '🔩')}
         {N('bikes', 'Bikes to Order', '🚲')}
         {N('shipments', 'Incoming Shipments', '📬')}
+        {N('vendor-stock', 'Vendor Stock', '📊')}
         {L('Guides')}
         {N('workshop', 'Workshop Guides', '🔧')}
         {N('salesguide', 'Sales Guides', '💡')}
@@ -2221,6 +2222,7 @@ export default function App() {
         <P id="parts"><PartsPage user={user} parts={parts} onAdd={addPart} onToggle={togglePart} onDelete={deletePart} isMgr={isMgr} /></P>
         <P id="bikes"><BikesPage user={user} bikes={bikes} onAdd={addBike} onToggle={toggleBike} onDelete={deleteBike} isMgr={isMgr} /></P>
         <P id="shipments"><ShipmentsPage user={user} isMgr={isMgr} /></P>
+        <P id="vendor-stock"><VendorStockPage /></P>
         <P id="warranty-submit"><WarrantySubmitPage user={user} /></P>
         <P id="announcements">
           <div style={S.page}>
@@ -2317,6 +2319,112 @@ function BrandAccordion({ isMgr }) {
           <EditableSteps listKey={b.listKey} defaultSections={b.defaultSections || [{ title: 'Getting Started', steps: [{ title: 'Add your first section', desc: 'Click ✏️ Edit to start adding content.', img: '' }] }]} isMgr={isMgr} />
         </div>
       ))}
+    </div>
+  )
+}
+
+function VendorStockPage() {
+  const VELOTRIC_CSV = 'https://docs.google.com/spreadsheets/d/1liGRm6SL43ZgaIqr5a3-skX2Inm8b-8KApla07w5UCE/export?format=csv&gid=0'
+  const [rows, setRows] = useState([])
+  const [headers, setHeaders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [lastUpdated, setLastUpdated] = useState(null)
+
+  const fetchData = async () => {
+    setLoading(true); setError('')
+    try {
+      const res = await fetch(VELOTRIC_CSV)
+      if (!res.ok) throw new Error('Could not load sheet')
+      const text = await res.text()
+      const lines = text.trim().split('\n').map(l => l.split(',').map(c => c.replace(/^"|"$/g, '').trim()))
+      const sheetTitle = lines[0]?.[0] || ''
+      const headerRow = lines[1] || []
+      const dataRows = lines.slice(2).filter(r => r.some(c => c))
+      setHeaders(headerRow)
+      setRows(dataRows)
+      setLastUpdated(sheetTitle)
+    } catch (e) {
+      setError('Could not load Velotric inventory. Check your connection.')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchData() }, [])
+
+  const filtered = rows.filter(r => !search || r[0]?.toLowerCase().includes(search.toLowerCase()))
+  const etaCols = headers.slice(3)
+
+  const stockColor = (val) => {
+    const n = parseInt(val)
+    if (isNaN(n) || n === 0) return 'var(--text3)'
+    if (n >= 5) return 'var(--green)'
+    return 'var(--amber)'
+  }
+
+  return (
+    <div style={S.page}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 600 }}>📊 Vendor Stock</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Live inventory from Velotric{lastUpdated ? ` · ${lastUpdated}` : ''}</div>
+        </div>
+        <button onClick={fetchData} disabled={loading} style={{ ...S.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Loading...' : '↺ Refresh'}</button>
+      </div>
+      {error && <div style={{ ...S.card, color: 'var(--red)', marginBottom: 14 }}>{error}</div>}
+      <div style={{ marginBottom: 14 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by model name..." style={S.input} />
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading inventory...</div>
+      ) : (
+        <div style={S.card}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)', minWidth: 200 }}>Model</th>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)' }}>SKU</th>
+                  <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)' }}>In Stock</th>
+                  {etaCols.map((h, i) => (
+                    <th key={i} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--accent2)', textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row, i) => {
+                  if (!row[0]) return (
+                    <tr key={i}><td colSpan={3 + etaCols.length} style={{ padding: '4px 0', borderBottom: '1px solid var(--border)' }} /></tr>
+                  )
+                  const inStock = parseInt(row[2]) || 0
+                  return (
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontWeight: 500 }}>{row[0]}</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>{row[1]}</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: inStock > 0 ? 'var(--green)' : 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                        {inStock > 0 ? inStock : '—'}
+                      </td>
+                      {etaCols.map((_, ci) => {
+                        const val = row[3 + ci]
+                        const n = parseInt(val) || 0
+                        return (
+                          <td key={ci} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontFamily: 'var(--mono)', color: stockColor(val) }}>
+                            {n > 0 ? n : '—'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12, fontFamily: 'var(--mono)' }}>
+            {filtered.length} models · Live from Velotric · Tap Refresh for latest
+          </div>
+        </div>
+      )}
     </div>
   )
 }
