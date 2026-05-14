@@ -771,7 +771,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {N('vendor-stock', 'Vendor Stock', '📊')}
         {L('Guides')}
         {N('workshop', 'Workshop Guides', '🔧')}
-        {N('service-notes', 'Service Notes', '📋')}
+        {N('service-notes', 'Service Report', '📋')}
         {N('salesguide', 'Sales Guides', '💡')}
         {N('warranty-submit', 'Submit Warranty', '🛡️')}
         {isMgr && <>
@@ -2280,7 +2280,7 @@ export default function App() {
           </div>
         </P>
         <P id="workshop"><WorkshopGuidesPage isMgr={isMgr} /></P>
-        <P id="service-notes"><ServiceNotesPage /></P>
+        <P id="service-notes"><ServiceNotesPage user={user} /></P>
         <P id="salesguide">
           <div style={S.page}>
             <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>💡 Sales Guides</div>
@@ -2491,9 +2491,358 @@ function VendorStockPage() {
   )
 }
 
-// ── SERVICE NOTES BUILDER ──
+// ── SERVICE REPORT BUILDER ──
 
 const SERVICE_ITEMS = {
+  'Brakes': [
+    'Checked brake pads — within spec',
+    'Checked brake pads — worn, replaced',
+    'Checked brake rotors — true and clean',
+    'Checked brake rotors — replaced',
+    'Adjusted brake caliper alignment',
+    'Bled hydraulic brake lines — front',
+    'Bled hydraulic brake lines — rear',
+    'Adjusted brake cable tension',
+    'Checked brake lever reach and feel',
+    'Tested brakes — stopping power confirmed',
+  ],
+  'Drivetrain': [
+    'Checked chain stretch — within spec',
+    'Checked chain stretch — replaced chain',
+    'Checked cassette — within spec',
+    'Checked cassette — replaced',
+    'Checked chainring — within spec',
+    'Checked chainring — replaced',
+    'Adjusted front derailleur',
+    'Adjusted rear derailleur',
+    'Lubricated chain',
+    'Cleaned drivetrain components',
+    'Checked bottom bracket — no play',
+    'Checked crankarms — tightened',
+  ],
+  'Wheels & Tires': [
+    'Checked tire pressure — inflated to spec',
+    'Checked tire condition — good',
+    'Checked tire condition — worn, replaced',
+    'Checked for punctures — none found',
+    'Repaired puncture / replaced tube',
+    'Checked wheel true — within spec',
+    'Trued wheel — front',
+    'Trued wheel — rear',
+    'Checked quick release / thru axle — secure',
+    'Checked spoke tension — adjusted',
+  ],
+  'eBike Systems': [
+    'Checked battery charge level',
+    'Checked battery connections — secure',
+    'Tested pedal assist — all levels functioning',
+    'Tested throttle — functioning',
+    'Checked display — functioning',
+    'Read and cleared error codes',
+    'Checked motor connections — secure',
+    'Tested motor output — normal',
+    'Checked charger port — clean and undamaged',
+    'Firmware checked / updated',
+  ],
+  'Frame & Components': [
+    'Checked headset — adjusted',
+    'Checked stem — tightened to spec',
+    'Checked handlebars — tightened to spec',
+    'Checked seatpost — tightened to spec',
+    'Checked saddle — level and secure',
+    'Checked pedals — tight',
+    'Checked frame — no cracks or damage',
+    'Checked fork — no damage',
+    'Lubricated pivot points',
+    'Cleaned and detailed bike',
+  ],
+  'General': [
+    'Performed full safety inspection',
+    'Road tested — all systems normal',
+    'Customer advised of additional items noted but not repaired',
+    'Customer approved all work before starting',
+    'Bike ready for pickup',
+  ],
+}
+
+const BUILD_CHECKLIST = [
+  { section: 'Handlebar Controls', items: [
+    { id: 'grips', label: 'Grips — in place and tight' },
+    { id: 'shifters', label: 'Shifters — functional and tight' },
+    { id: 'levers', label: 'Levers (Brakes) — modulation checked' },
+    { id: 'elec_buttons', label: 'Electrical button check' },
+    { id: 'bell', label: 'Bell — on and tight' },
+  ]},
+  { section: 'Steering', items: [
+    { id: 'stem', label: 'Stem — alignment and tightness (Gazelle min 30°)' },
+    { id: 'headset', label: 'Headset — smooth with no play' },
+  ]},
+  { section: 'Wheels', items: [
+    { id: 'axles', label: 'Axles — tight and spinning smoothly' },
+    { id: 'spokes', label: 'Spokes — in place and tensioned' },
+    { id: 'trueness', label: 'Wheel trueness — confirmed' },
+    { id: 'tire', label: 'Tire seated and inflated to pressure' },
+    { id: 'rotors', label: 'Rotors — torqued to spec' },
+  ]},
+  { section: 'Bottom Bracket', items: [
+    { id: 'bb', label: 'Bottom bracket — tight and smooth' },
+  ]},
+  { section: 'Crank Arms', items: [
+    { id: 'cranks', label: 'Crank arms — tight' },
+    { id: 'pedals', label: 'Pedals — tight' },
+  ]},
+  { section: 'Kickstand', items: [
+    { id: 'kickstand', label: 'Kickstand — tightened and correctly adjusted' },
+  ]},
+  { section: 'Transmission', items: [
+    { id: 'derailleur', label: 'Derailleur — functioning correctly' },
+    { id: 'gears', label: 'Gears adjusted — limits and indexing set' },
+  ]},
+  { section: 'Saddle', items: [
+    { id: 'saddle', label: 'Saddle — tight and seatpost clamp adjusted' },
+  ]},
+  { section: 'Electrical', items: [
+    { id: 'power_on', label: 'Powers on correctly' },
+    { id: 'settings', label: 'Settings confirmed — changed to km' },
+    { id: 'battery', label: 'Battery at least 30% before delivery' },
+  ]},
+]
+
+function ServiceNotesPage({ user }) {
+  const [tab, setTab] = useState('report')
+  const [selected, setSelected] = useState([])
+  const [buildChecks, setBuildChecks] = useState({})
+  const [customerName, setCustomerName] = useState('')
+  const [bikeDesc, setBikeDesc] = useState('')
+  const [extraNote, setExtraNote] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const reportTabs = Object.keys(SERVICE_ITEMS)
+  const [reportTab, setReportTab] = useState('Brakes')
+
+  const toggle = (item) => setSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
+  const isSelected = (item) => selected.includes(item)
+  const toggleCheck = (id) => setBuildChecks(c => ({ ...c, [id]: !c[id] }))
+
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })
+  const allCheckItems = BUILD_CHECKLIST.flatMap(s => s.items)
+  const checkedCount = allCheckItems.filter(i => buildChecks[i.id]).length
+  const totalCount = allCheckItems.length
+
+  const buildReport = () => {
+    const lines = []
+    lines.push('SERVICE REPORT')
+    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
+    lines.push('─────────────────────────────────────')
+    if (customerName) lines.push(`Customer: ${customerName}`)
+    if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
+    lines.push(`Date: ${today}`)
+    if (user?.name) lines.push(`Technician: ${user.name}`)
+    lines.push('')
+    lines.push('WORK PERFORMED:')
+    if (selected.length === 0) lines.push('— No items selected')
+    Object.keys(SERVICE_ITEMS).forEach(cat => {
+      const catItems = selected.filter(s => SERVICE_ITEMS[cat].includes(s))
+      if (catItems.length > 0) {
+        lines.push('')
+        lines.push(cat.toUpperCase())
+        catItems.forEach(item => lines.push(`• ${item}`))
+      }
+    })
+    if (extraNote.trim()) { lines.push(''); lines.push('ADDITIONAL NOTES:'); lines.push(extraNote.trim()) }
+    lines.push('')
+    lines.push('─────────────────────────────────────')
+    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
+    return lines.join('\n')
+  }
+
+  const buildChecklistReport = () => {
+    const lines = []
+    lines.push('BIKE BUILD CHECKLIST')
+    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
+    lines.push('─────────────────────────────────────')
+    if (customerName) lines.push(`Customer: ${customerName}`)
+    if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
+    lines.push(`Date: ${today}`)
+    if (user?.name) lines.push(`Technician: ${user.name}`)
+    lines.push(`Completed: ${checkedCount} of ${totalCount} items`)
+    lines.push('')
+    BUILD_CHECKLIST.forEach(section => {
+      lines.push(section.section.toUpperCase())
+      section.items.forEach(item => {
+        lines.push(`${buildChecks[item.id] ? '☑' : '☐'} ${item.label}`)
+      })
+      lines.push('')
+    })
+    if (extraNote.trim()) { lines.push('NOTES:'); lines.push(extraNote.trim()); lines.push('') }
+    lines.push('─────────────────────────────────────')
+    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
+    return lines.join('\n')
+  }
+
+  const copy = () => {
+    const text = tab === 'checklist' ? buildChecklistReport() : buildReport()
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  const print = () => {
+    const isChecklist = tab === 'checklist'
+    const content = isChecklist ? buildChecklistReport() : buildReport()
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head><title>${isChecklist ? 'Build Checklist' : 'Service Report'}</title><style>
+      body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;font-size:14px;line-height:1.6;color:#111;}
+      h1{font-size:20px;font-weight:bold;margin:0 0 4px;}
+      .sub{font-size:13px;color:#555;margin-bottom:16px;}
+      .meta{margin-bottom:16px;}
+      .meta div{margin-bottom:2px;}
+      .section{font-weight:bold;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px;color:#333;border-bottom:1px solid #ddd;padding-bottom:3px;}
+      .item{padding:3px 0;display:flex;gap:8px;}
+      .check{width:16px;height:16px;border:1.5px solid #333;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+      .done{background:#111;color:white;font-size:11px;}
+      .footer{margin-top:30px;padding-top:12px;border-top:1px solid #ccc;font-size:12px;color:#666;text-align:center;}
+      @media print{body{margin:20px;}}
+    </style></head><body>
+      <h1>${isChecklist ? 'Bike Build Checklist' : 'Service Report'}</h1>
+      <div class="sub">Cloud Ebikes · 1991 Main St, Vancouver</div>
+      <div class="meta">
+        ${customerName ? `<div><strong>Customer:</strong> ${customerName}</div>` : ''}
+        ${bikeDesc ? `<div><strong>Bike:</strong> ${bikeDesc}</div>` : ''}
+        <div><strong>Date:</strong> ${today}</div>
+        ${user?.name ? `<div><strong>Technician:</strong> ${user.name}</div>` : ''}
+        ${isChecklist ? `<div><strong>Progress:</strong> ${checkedCount} of ${totalCount} items completed</div>` : ''}
+      </div>
+      ${isChecklist ? BUILD_CHECKLIST.map(section => `
+        <div class="section">${section.section}</div>
+        ${section.items.map(item => `
+          <div class="item">
+            <div class="check${buildChecks[item.id] ? ' done' : ''}">${buildChecks[item.id] ? '✓' : ''}</div>
+            <span>${item.label}</span>
+          </div>`).join('')}
+      `).join('') : Object.keys(SERVICE_ITEMS).map(cat => {
+        const catItems = selected.filter(s => SERVICE_ITEMS[cat].includes(s))
+        if (!catItems.length) return ''
+        return `<div class="section">${cat}</div>${catItems.map(i => `<div class="item"><span>•</span><span>${i}</span></div>`).join('')}`
+      }).join('')}
+      ${extraNote.trim() ? `<div class="section">Additional Notes</div><div>${extraNote}</div>` : ''}
+      <div class="footer">Cloud Ebikes · 1991 Main St, Vancouver</div>
+    </body></html>`)
+    w.document.close(); w.print()
+  }
+
+  const reset = () => { setSelected([]); setBuildChecks({}); setCustomerName(''); setBikeDesc(''); setExtraNote(''); setCopied(false) }
+
+  const groupedSelected = Object.keys(SERVICE_ITEMS).map(t => ({
+    tab: t, items: selected.filter(s => SERVICE_ITEMS[t].includes(s))
+  })).filter(g => g.items.length > 0)
+
+  return (
+    <div style={S.page}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 600 }}>📋 Service Report</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Build a service report or bike build checklist to share with customers</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={reset} style={S.btn}>↺ Reset</button>
+          <button onClick={copy} style={{ ...S.btn, ...(copied ? S.btnG : {}) }}>{copied ? '✓ Copied' : '📋 Copy'}</button>
+          <button onClick={print} style={{ ...S.btn, ...S.btnP }}>🖨️ Print</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>CUSTOMER NAME</div><input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="e.g. John Smith" style={S.input} /></div>
+        <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE</div><input value={bikeDesc} onChange={e => setBikeDesc(e.target.value)} placeholder="e.g. Aventon Pace 500 — Blue" style={S.input} /></div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        <button onClick={() => setTab('report')} style={{ ...S.btn, ...(tab === 'report' ? S.btnP : {}), fontSize: 13 }}>📝 Service Report</button>
+        <button onClick={() => setTab('checklist')} style={{ ...S.btn, ...(tab === 'checklist' ? S.btnP : {}), fontSize: 13 }}>✅ Bike Build Checklist {checkedCount > 0 && <span style={{ marginLeft: 4, fontSize: 10, background: 'rgba(255,255,255,0.25)', borderRadius: 10, padding: '1px 6px' }}>{checkedCount}/{totalCount}</span>}</button>
+      </div>
+
+      {tab === 'report' && (
+        <>
+          <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            {reportTabs.map(t => (
+              <button key={t} onClick={() => setReportTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: reportTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${reportTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {t}
+                {SERVICE_ITEMS[t].some(i => selected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
+              </button>
+            ))}
+          </div>
+          <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {SERVICE_ITEMS[reportTab].map(item => (
+                <div key={item} onClick={() => toggle(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: isSelected(item) ? 'rgba(59,130,246,0.1)' : 'var(--bg3)', border: `1px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border)'}`, transition: 'all 0.15s' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border2)'}`, background: isSelected(item) ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {isSelected(item) && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: 13, color: isSelected(item) ? 'var(--text)' : 'var(--text2)' }}>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardTitle}>Additional Notes</div>
+            <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="Any additional work or observations..." style={{ ...S.textarea, minHeight: 60 }} />
+          </div>
+          {selected.length > 0 ? (
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={S.cardTitle}>Preview ({selected.length} items)</div>
+              </div>
+              {customerName && <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Customer: <strong style={{ color: 'var(--text)' }}>{customerName}</strong>{bikeDesc && <> · {bikeDesc}</>}</div>}
+              {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, fontFamily: 'var(--mono)' }}>Technician: {user.name} · {today}</div>}
+              {groupedSelected.map(g => (
+                <div key={g.tab} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.tab}</div>
+                  {g.items.map(item => <div key={item} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>•</span>{item}</div>)}
+                </div>
+              ))}
+              {extraNote.trim() && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}><div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase' }}>Additional Notes</div><div style={{ fontSize: 13, color: 'var(--text2)' }}>{extraNote}</div></div>}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Cloud Ebikes · 1991 Main St, Vancouver</div>
+            </div>
+          ) : (
+            <div style={{ ...S.card, color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Select items above to build the service report</div>
+          )}
+        </>
+      )}
+
+      {tab === 'checklist' && (
+        <>
+          <div style={{ ...S.card, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={S.cardTitle}>Progress</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: checkedCount === totalCount ? 'var(--green)' : 'var(--amber)', fontFamily: 'var(--mono)' }}>{checkedCount}/{totalCount}</div>
+            </div>
+            <div style={{ background: 'var(--bg3)', borderRadius: 20, height: 6, overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: checkedCount === totalCount ? 'var(--green)' : 'var(--accent)', borderRadius: 20, width: `${totalCount ? (checkedCount / totalCount) * 100 : 0}%`, transition: 'width 0.3s' }} />
+            </div>
+          </div>
+          {BUILD_CHECKLIST.map(section => (
+            <div key={section.section} style={S.card}>
+              <div style={S.cardTitle}>{section.section}</div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {section.items.map(item => (
+                  <div key={item.id} onClick={() => toggleCheck(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: buildChecks[item.id] ? 'rgba(34,197,94,0.1)' : 'var(--bg3)', border: `1px solid ${buildChecks[item.id] ? 'var(--green)' : 'var(--border)'}`, transition: 'all 0.15s' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${buildChecks[item.id] ? 'var(--green)' : 'var(--border2)'}`, background: buildChecks[item.id] ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {buildChecks[item.id] && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize: 13, color: buildChecks[item.id] ? 'var(--text)' : 'var(--text2)' }}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={S.card}>
+            <div style={S.cardTitle}>Notes</div>
+            <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="Any build notes or observations..." style={{ ...S.textarea, minHeight: 60 }} />
+          </div>
+          {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4, marginBottom: 16 }}>Completed by: {user.name} · {today} · Cloud Ebikes · 1991 Main St, Vancouver</div>}
+        </>
+      )}
+    </div>
+  )
+}
   'Brakes': [
     'Checked brake pads — within spec',
     'Checked brake pads — worn, replaced',
