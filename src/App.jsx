@@ -453,43 +453,38 @@ function BuildCard({ build, users, onUpdate, onDelete }) {
   const activeUsers = users.filter(u => u.active)
   const needsContact = build.status === 'Ready for Pickup' && build.contact_status !== 'Customer Notified'
   const save = () => { onUpdate(build.id, form); setEditing(false) }
+
   return (
-    <div style={{ ...S.card, marginBottom: 12, borderLeft: `3px solid ${needsContact ? 'var(--amber)' : sc}` }}>
+    <div style={{ ...S.card, marginBottom: 8, borderLeft: `3px solid ${needsContact ? 'var(--amber)' : sc}`, padding: '12px 16px' }}>
       {showSMS && <SMSModal build={build} onClose={() => setShowSMS(false)} onSent={() => onUpdate(build.id, { contact_status: 'Customer Notified', last_contacted: nowISO() })} />}
+
       {!editing ? (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{build.bike_description}</div>
-                <span style={S.badge(sc)}>{build.status}</span>
-                {needsContact && <span style={S.badge('var(--amber)')}>📱 Needs Contact</span>}
-                {build.contact_status === 'Customer Notified' && <span style={S.badge('var(--green)')}>✓ Notified</span>}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: '3px 16px', fontSize: 12, color: 'var(--text2)' }}>
-                {build.order_number && <div><span style={{ color: 'var(--text3)' }}>Order: </span>{build.order_number}</div>}
-                {build.customer_name && <div><span style={{ color: 'var(--text3)' }}>Customer: </span>{build.customer_name}</div>}
-                {build.customer_phone && <div><span style={{ color: 'var(--text3)' }}>Phone: </span>{build.customer_phone}</div>}
-                {build.pickup_date && <div><span style={{ color: 'var(--text3)' }}>Pickup: </span>{fmtDate(build.pickup_date)}</div>}
-                <div><span style={{ color: 'var(--text3)' }}>Assigned: </span>{assignee ? <strong>{assignee.name}</strong> : <span style={{ color: 'var(--red)' }}>Unassigned</span>}</div>
-                {build.last_contacted && <div><span style={{ color: 'var(--text3)' }}>Texted: </span>{fmtDate(build.last_contacted)}</div>}
-              </div>
-              {build.notes && <div style={{ fontSize: 13, color: 'var(--text2)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--rs)', lineHeight: 1.6, marginTop: 8 }}>{build.notes}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{build.bike_description}</div>
+              <span style={S.badge(sc)}>{build.status}</span>
+              {needsContact && <span style={S.badge('var(--amber)')}>📱 Contact</span>}
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button onClick={() => setShowSMS(true)} style={{ ...S.btn, ...S.btnSm, ...(needsContact ? S.btnA : {}) }}>📱</button>
-              <button onClick={() => { setForm({ ...build }); setEditing(true) }} style={{ ...S.btn, ...S.btnSm }}>✏️</button>
-              <button onClick={() => onDelete(build.id)} style={{ ...S.btn, ...S.btnD, ...S.btnSm }}>✕</button>
+            <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 12, color: 'var(--text2)', flexWrap: 'wrap' }}>
+              {build.customer_name && <span>{build.customer_name}</span>}
+              {build.order_number && <span style={{ fontFamily: 'var(--mono)', color: 'var(--text3)' }}>#{build.order_number}</span>}
+              {assignee && <span>→ {assignee.name}</span>}
+              {build.pickup_date && <span style={{ color: 'var(--text3)' }}>Pickup {fmtDate(build.pickup_date)}</span>}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 4 }}>STATUS</div><select value={build.status} onChange={e => onUpdate(build.id, { status: e.target.value })} style={{ ...S.select, fontSize: 12, padding: '5px 8px' }}>{BUILD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-            <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 4 }}>ASSIGNED TO</div><select value={build.assigned_to || ''} onChange={e => onUpdate(build.id, { assigned_to: e.target.value })} style={{ ...S.select, fontSize: 12, padding: '5px 8px' }}><option value="">Unassigned</option>{activeUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-            <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 4 }}>CONTACT STATUS</div><select value={build.contact_status || 'Not Contacted'} onChange={e => onUpdate(build.id, { contact_status: e.target.value })} style={{ ...S.select, fontSize: 12, padding: '5px 8px' }}>{CONTACT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {needsContact && <button onClick={() => setShowSMS(true)} style={{ ...S.btn, ...S.btnA, ...S.btnSm }}>📱</button>}
+            <button onClick={() => { setForm({ ...build }); setEditing(true) }} style={{ ...S.btn, ...S.btnSm }}>✏️</button>
+            <button onClick={() => onDelete(build.id)} style={{ ...S.btn, ...S.btnD, ...S.btnSm }}>✕</button>
           </div>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)' }}>Editing Build</div>
+            <button onClick={() => setShowSMS(true)} style={{ ...S.btn, ...S.btnSm }}>📱 Send SMS</button>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE DESCRIPTION</div><input value={form.bike_description || ''} onChange={e => setForm({ ...form, bike_description: e.target.value })} style={S.input} /></div>
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>ORDER NUMBER</div><input value={form.order_number || ''} onChange={e => setForm({ ...form, order_number: e.target.value })} style={S.input} /></div>
@@ -499,15 +494,15 @@ function BuildCard({ build, users, onUpdate, onDelete }) {
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>CUSTOMER PHONE</div><input value={form.customer_phone || ''} onChange={e => setForm({ ...form, customer_phone: e.target.value })} style={S.input} /></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PICKUP DATE</div><input type="date" value={form.pickup_date || ''} onChange={e => setForm({ ...form, pickup_date: e.target.value })} style={S.input} /></div>
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>STATUS</div><select value={form.status || 'Waiting for Bike'} onChange={e => setForm({ ...form, status: e.target.value })} style={S.select}>{BUILD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>ASSIGNED TO</div><select value={form.assigned_to || ''} onChange={e => setForm({ ...form, assigned_to: e.target.value })} style={S.select}><option value="">Unassigned</option>{activeUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>ASSIGNED TO</div><select value={form.assigned_to || ''} onChange={e => setForm({ ...form, assigned_to: e.target.value })} style={S.select}><option value="">Unassigned</option>{activeUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+            <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PICKUP DATE</div><input type="date" value={form.pickup_date || ''} onChange={e => setForm({ ...form, pickup_date: e.target.value })} style={S.input} /></div>
             <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>CONTACT STATUS</div><select value={form.contact_status || 'Not Contacted'} onChange={e => setForm({ ...form, contact_status: e.target.value })} style={S.select}>{CONTACT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
           </div>
-          <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>NOTES</div><textarea value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} style={S.textarea} /></div>
-          <div style={{ display: 'flex', gap: 8 }}><button onClick={save} style={{ ...S.btn, ...S.btnP }}>Save Changes</button><button onClick={() => setEditing(false)} style={S.btn}>Cancel</button></div>
+          <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>NOTES</div><textarea value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...S.textarea, minHeight: 60 }} /></div>
+          <div style={{ display: 'flex', gap: 8 }}><button onClick={save} style={{ ...S.btn, ...S.btnP }}>Save</button><button onClick={() => setEditing(false)} style={S.btn}>Cancel</button></div>
         </div>
       )}
     </div>
