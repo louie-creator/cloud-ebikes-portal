@@ -2493,124 +2493,63 @@ function VendorStockPage() {
 
 // ── SERVICE REPORT BUILDER ──
 
-const SERVICE_ITEMS = {
+const ASSESSMENT_ITEMS = {
   'Brakes': [
-    'Checked brake pads — within spec',
-    'Checked brake pads — worn, replaced',
-    'Checked brake rotors — true and clean',
-    'Checked brake rotors — replaced',
-    'Adjusted brake caliper alignment',
-    'Bled hydraulic brake lines — front',
-    'Bled hydraulic brake lines — rear',
-    'Adjusted brake cable tension',
-    'Checked brake lever reach and feel',
-    'Tested brakes — stopping power confirmed',
+    { id: 'bp_front', label: 'Brake pads — Front' },
+    { id: 'bp_rear', label: 'Brake pads — Rear' },
+    { id: 'br_front', label: 'Brake rotors — Front' },
+    { id: 'br_rear', label: 'Brake rotors — Rear' },
+    { id: 'cal_front', label: 'Caliper alignment — Front' },
+    { id: 'cal_rear', label: 'Caliper alignment — Rear' },
+    { id: 'hyd_front', label: 'Hydraulic brake lines — Front' },
+    { id: 'hyd_rear', label: 'Hydraulic brake lines — Rear' },
+    { id: 'lever_front', label: 'Brake lever feel — Front' },
+    { id: 'lever_rear', label: 'Brake lever feel — Rear' },
   ],
   'Drivetrain': [
-    'Checked chain stretch — within spec',
-    'Checked chain stretch — replaced chain',
-    'Checked cassette — within spec',
-    'Checked cassette — replaced',
-    'Checked chainring — within spec',
-    'Checked chainring — replaced',
-    'Adjusted front derailleur',
-    'Adjusted rear derailleur',
-    'Lubricated chain',
-    'Cleaned drivetrain components',
-    'Checked bottom bracket — no play',
-    'Checked crankarms — tightened',
+    { id: 'chain', label: 'Chain stretch' },
+    { id: 'cassette', label: 'Cassette condition' },
+    { id: 'chainring', label: 'Chainring condition' },
+    { id: 'front_der', label: 'Front derailleur' },
+    { id: 'rear_der', label: 'Rear derailleur' },
+    { id: 'bb', label: 'Bottom bracket' },
+    { id: 'cranks', label: 'Crank arms' },
+    { id: 'pedals', label: 'Pedals' },
+    { id: 'cables', label: 'Cables and housing' },
   ],
   'Wheels & Tires': [
-    'Checked tire pressure — inflated to spec',
-    'Checked tire condition — good',
-    'Checked tire condition — worn, replaced',
-    'Checked for punctures — none found',
-    'Repaired puncture / replaced tube',
-    'Checked wheel true — within spec',
-    'Trued wheel — front',
-    'Trued wheel — rear',
-    'Checked quick release / thru axle — secure',
-    'Checked spoke tension — adjusted',
+    { id: 'tire_front', label: 'Tire condition — Front' },
+    { id: 'tire_rear', label: 'Tire condition — Rear' },
+    { id: 'tube_front', label: 'Tube — Front' },
+    { id: 'tube_rear', label: 'Tube — Rear' },
+    { id: 'true_front', label: 'Wheel true — Front' },
+    { id: 'true_rear', label: 'Wheel true — Rear' },
+    { id: 'spokes_front', label: 'Spoke tension — Front' },
+    { id: 'spokes_rear', label: 'Spoke tension — Rear' },
+    { id: 'axle_front', label: 'Axle — Front' },
+    { id: 'axle_rear', label: 'Axle — Rear' },
   ],
   'eBike Systems': [
-    'Checked battery charge level',
-    'Checked battery connections — secure',
-    'Tested pedal assist — all levels functioning',
-    'Tested throttle — functioning',
-    'Checked display — functioning',
-    'Read and cleared error codes',
-    'Checked motor connections — secure',
-    'Tested motor output — normal',
-    'Checked charger port — clean and undamaged',
-    'Firmware checked / updated',
+    { id: 'battery', label: 'Battery health' },
+    { id: 'battery_conn', label: 'Battery connections' },
+    { id: 'motor', label: 'Motor' },
+    { id: 'motor_conn', label: 'Motor connections' },
+    { id: 'display', label: 'Display / Console' },
+    { id: 'pas', label: 'Pedal assist (all levels)' },
+    { id: 'throttle', label: 'Throttle' },
+    { id: 'charger', label: 'Charger port' },
+    { id: 'error_codes', label: 'Error codes' },
   ],
-  'Frame & Components': [
-    'Checked headset — adjusted',
-    'Checked stem — tightened to spec',
-    'Checked handlebars — tightened to spec',
-    'Checked seatpost — tightened to spec',
-    'Checked saddle — level and secure',
-    'Checked pedals — tight',
-    'Checked frame — no cracks or damage',
-    'Checked fork — no damage',
-    'Lubricated pivot points',
-    'Cleaned and detailed bike',
-  ],
-  'General': [
-    'Performed full safety inspection',
-    'Road tested — all systems normal',
-    'Customer advised of additional items noted but not repaired',
-    'Customer approved all work before starting',
-    'Bike ready for pickup',
-  ],
-}
-
-const ASSESSMENT_ITEMS = {
-  'Customer Complaint': [
-    'Not shifting properly',
-    'Brakes not working well',
-    'Bike making noise while riding',
-    'Battery not charging',
-    'Motor not working / no assist',
-    'Display not turning on',
-    'Flat tire',
-    'Wheel wobbling',
-    'Bike not turning on',
-    'Throttle not working',
-    'Pedal assist not engaging',
-    'Brake rubbing',
-    'Chain slipping',
-    'Pedals hard to turn',
-    'General tune-up requested',
-    'Pre-delivery inspection requested',
-  ],
-  'Condition on Arrival': [
-    'Bike in good overall condition',
-    'Bike in fair condition — normal wear',
-    'Bike in poor condition — significant wear',
-    'Evidence of crash damage',
-    'Evidence of water damage',
-    'Third-party work previously done',
-    'Missing components noted',
-    'Bike not rideable on arrival',
-    'Bike partially rideable on arrival',
-    'Bike rideable on arrival',
-  ],
-  'Issues Found': [
-    'Brake pads worn — replacement needed',
-    'Chain stretched — replacement needed',
-    'Cassette worn — replacement needed',
-    'Tire worn or damaged',
-    'Wheel out of true',
-    'Headset loose or rough',
-    'Bottom bracket loose or worn',
-    'Cable housing cracked or frayed',
-    'Battery not holding charge',
-    'Motor making abnormal noise',
-    'Display error code present',
-    'Derailleur hanger bent',
-    'Frame crack or damage found',
-    'Hydraulic brake bleed required',
+  'Frame & Handling': [
+    { id: 'frame', label: 'Frame condition' },
+    { id: 'fork', label: 'Fork condition' },
+    { id: 'headset', label: 'Headset' },
+    { id: 'stem', label: 'Stem' },
+    { id: 'bars', label: 'Handlebars' },
+    { id: 'seatpost', label: 'Seatpost' },
+    { id: 'saddle', label: 'Saddle' },
+    { id: 'kickstand', label: 'Kickstand' },
+    { id: 'grips', label: 'Grips' },
   ],
 }
 
@@ -2659,15 +2598,14 @@ const BUILD_CHECKLIST = [
 
 function ServiceNotesPage({ user }) {
   const [mainTab, setMainTab] = useState('assessment')
-  const [assessmentTab, setAssessmentTab] = useState('Customer Complaint')
-  const [workTab, setWorkTab] = useState('Brakes')
-  const [assessmentSelected, setAssessmentSelected] = useState([])
-  const [workSelected, setWorkSelected] = useState([])
+  const [assessmentTab, setAssessmentTab] = useState('Brakes')
+  const [assessment, setAssessment] = useState({}) // { id: 'good' | 'needs_work' }
+  const [jobDone, setJobDone] = useState({}) // { id: true/false }
   const [buildChecks, setBuildChecks] = useState({})
   const [customerName, setCustomerName] = useState('')
   const [bikeDesc, setBikeDesc] = useState('')
   const [assessmentNote, setAssessmentNote] = useState('')
-  const [workNote, setWorkNote] = useState('')
+  const [jobNote, setJobNote] = useState('')
   const [copied, setCopied] = useState(false)
 
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -2675,121 +2613,150 @@ function ServiceNotesPage({ user }) {
   const checkedCount = allCheckItems.filter(i => buildChecks[i.id]).length
   const totalCount = allCheckItems.length
 
-  const toggleAssessment = (item) => setAssessmentSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
-  const toggleWork = (item) => setWorkSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
+  const allAssessItems = Object.values(ASSESSMENT_ITEMS).flat()
+  const needsWorkItems = allAssessItems.filter(i => assessment[i.id] === 'needs_work')
+  const goodItems = allAssessItems.filter(i => assessment[i.id] === 'good')
+  const assessedCount = Object.keys(assessment).length
+  const jobDoneCount = needsWorkItems.filter(i => jobDone[i.id]).length
+
+  const setAssess = (id, val) => setAssessment(a => ({ ...a, [id]: a[id] === val ? undefined : val }))
+  const toggleJob = (id) => setJobDone(j => ({ ...j, [id]: !j[id] }))
   const toggleCheck = (id) => setBuildChecks(c => ({ ...c, [id]: !c[id] }))
 
-  const buildFullReport = () => {
-    const lines = []
-    lines.push('SERVICE REPORT')
-    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
-    lines.push('─────────────────────────────────────')
-    if (customerName) lines.push(`Customer: ${customerName}`)
-    if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
-    lines.push(`Date: ${today}`)
-    if (user?.name) lines.push(`Technician: ${user.name}`)
-    if (assessmentSelected.length > 0 || assessmentNote.trim()) {
-      lines.push('')
-      lines.push('ASSESSMENT:')
-      Object.keys(ASSESSMENT_ITEMS).forEach(cat => {
-        const catItems = assessmentSelected.filter(s => ASSESSMENT_ITEMS[cat].includes(s))
-        if (catItems.length > 0) { lines.push(`${cat}:`); catItems.forEach(i => lines.push(`  • ${i}`)) }
-      })
-      if (assessmentNote.trim()) lines.push(`Notes: ${assessmentNote.trim()}`)
-    }
-    if (workSelected.length > 0 || workNote.trim()) {
-      lines.push('')
-      lines.push('WORK PERFORMED:')
-      Object.keys(SERVICE_ITEMS).forEach(cat => {
-        const catItems = workSelected.filter(s => SERVICE_ITEMS[cat].includes(s))
-        if (catItems.length > 0) { lines.push(`${cat}:`); catItems.forEach(i => lines.push(`  • ${i}`)) }
-      })
-      if (workNote.trim()) lines.push(`Notes: ${workNote.trim()}`)
-    }
-    lines.push('')
-    lines.push('─────────────────────────────────────')
-    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
-    return lines.join('\n')
+  const reset = () => {
+    setAssessment({}); setJobDone({}); setBuildChecks({})
+    setCustomerName(''); setBikeDesc(''); setAssessmentNote(''); setJobNote(''); setCopied(false)
   }
 
-  const copy = () => {
-    navigator.clipboard.writeText(buildFullReport()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
-  }
+  const headerHTML = (title) => `
+    <h1>${title}</h1>
+    <div class="shop">Cloud Ebikes · 1991 Main St, Vancouver</div>
+    <div class="meta">
+      ${customerName ? `<div><strong>Customer:</strong> ${customerName}</div>` : ''}
+      ${bikeDesc ? `<div><strong>Bike:</strong> ${bikeDesc}</div>` : ''}
+      <div><strong>Date:</strong> ${today}</div>
+      ${user?.name ? `<div><strong>Technician:</strong> ${user.name}</div>` : ''}
+    </div>`
 
-  const print = () => {
+  const baseCSS = `
+    body{font-family:Arial,sans-serif;max-width:620px;margin:40px auto;font-size:14px;line-height:1.6;color:#111;}
+    h1{font-size:22px;font-weight:bold;margin:0 0 2px;}
+    .shop{font-size:13px;color:#555;margin-bottom:16px;}
+    .meta div{margin-bottom:2px;font-size:13px;}
+    .section-header{font-weight:bold;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;margin:16px 0 4px;color:#444;border-bottom:1px solid #ddd;padding-bottom:2px;}
+    .item{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:13px;}
+    .status{font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px;}
+    .good{background:#dcfce7;color:#166534;}
+    .bad{background:#fee2e2;color:#991b1b;}
+    .done{background:#dbeafe;color:#1e40af;}
+    .check-item{display:flex;gap:8px;padding:4px 0;font-size:13px;}
+    .box{width:16px;height:16px;border:1.5px solid #333;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:11px;}
+    .checked{background:#111;color:white;}
+    .footer{margin-top:28px;padding-top:10px;border-top:1px solid #ccc;font-size:12px;color:#666;text-align:center;}
+    @media print{body{margin:20px;}}`
+
+  const printAssessment = () => {
     const w = window.open('', '_blank')
-    const assessmentGrouped = Object.keys(ASSESSMENT_ITEMS).map(cat => ({
-      cat, items: assessmentSelected.filter(s => ASSESSMENT_ITEMS[cat].includes(s))
-    })).filter(g => g.items.length > 0)
-    const workGrouped = Object.keys(SERVICE_ITEMS).map(cat => ({
-      cat, items: workSelected.filter(s => SERVICE_ITEMS[cat].includes(s))
-    })).filter(g => g.items.length > 0)
-    w.document.write(`<!DOCTYPE html><html><head><title>Service Report</title><style>
-      body{font-family:Arial,sans-serif;max-width:620px;margin:40px auto;font-size:14px;line-height:1.6;color:#111;}
-      h1{font-size:22px;font-weight:bold;margin:0 0 2px;}
-      .shop{font-size:13px;color:#555;margin-bottom:16px;}
-      .meta div{margin-bottom:2px;font-size:13px;}
-      .section-header{font-weight:bold;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;margin:16px 0 6px;color:#444;border-bottom:1px solid #ddd;padding-bottom:3px;}
-      .cat{font-size:12px;font-weight:bold;color:#333;margin:10px 0 4px;}
-      .item{padding:2px 0 2px 16px;font-size:13px;}
-      .check-item{display:flex;gap:8px;padding:4px 0;font-size:13px;}
-      .box{width:16px;height:16px;border:1.5px solid #333;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:11px;}
-      .done{background:#111;color:white;}
-      .footer{margin-top:28px;padding-top:10px;border-top:1px solid #ccc;font-size:12px;color:#666;text-align:center;}
-      @media print{body{margin:20px;}}
-    </style></head><body>
-      <h1>Service Report</h1>
-      <div class="shop">Cloud Ebikes · 1991 Main St, Vancouver</div>
-      <div class="meta">
-        ${customerName ? `<div><strong>Customer:</strong> ${customerName}</div>` : ''}
-        ${bikeDesc ? `<div><strong>Bike:</strong> ${bikeDesc}</div>` : ''}
-        <div><strong>Date:</strong> ${today}</div>
-        ${user?.name ? `<div><strong>Technician:</strong> ${user.name}</div>` : ''}
-      </div>
-      ${assessmentGrouped.length > 0 || assessmentNote.trim() ? `
-        <div class="section-header">Assessment</div>
-        ${assessmentGrouped.map(g => `<div class="cat">${g.cat}</div>${g.items.map(i => `<div class="item">• ${i}</div>`).join('')}`).join('')}
-        ${assessmentNote.trim() ? `<div class="cat">Notes</div><div class="item">${assessmentNote}</div>` : ''}
-      ` : ''}
-      ${workGrouped.length > 0 || workNote.trim() ? `
-        <div class="section-header">Work Performed</div>
-        ${workGrouped.map(g => `<div class="cat">${g.cat}</div>${g.items.map(i => `<div class="item">• ${i}</div>`).join('')}`).join('')}
-        ${workNote.trim() ? `<div class="cat">Notes</div><div class="item">${workNote}</div>` : ''}
-      ` : ''}
-      ${checkedCount > 0 ? `
-        <div class="section-header">Build Checklist (${checkedCount}/${totalCount})</div>
-        ${BUILD_CHECKLIST.map(section => `
-          <div class="cat">${section.section}</div>
-          ${section.items.map(item => `<div class="check-item"><div class="box${buildChecks[item.id] ? ' done' : ''}">${buildChecks[item.id] ? '✓' : ''}</div><span>${item.label}</span></div>`).join('')}
-        `).join('')}
-      ` : ''}
+    w.document.write(`<!DOCTYPE html><html><head><title>Bike Assessment</title><style>${baseCSS}</style></head><body>
+      ${headerHTML('Bike Assessment')}
+      ${Object.entries(ASSESSMENT_ITEMS).map(([cat, items]) => {
+        const catItems = items.filter(i => assessment[i.id])
+        if (!catItems.length) return ''
+        return `<div class="section-header">${cat}</div>
+          ${catItems.map(i => `<div class="item"><span>${i.label}</span>
+            <span class="status ${assessment[i.id] === 'good' ? 'good' : 'bad'}">${assessment[i.id] === 'good' ? '✓ Good' : '⚠ Needs Work'}</span>
+          </div>`).join('')}`
+      }).join('')}
+      ${assessmentNote.trim() ? `<div class="section-header">Notes</div><div style="font-size:13px;padding:4px 0">${assessmentNote}</div>` : ''}
+      ${needsWorkItems.length > 0 ? `
+        <div class="section-header" style="margin-top:20px">Items Requiring Attention (${needsWorkItems.length})</div>
+        ${needsWorkItems.map(i => `<div class="item"><span>${i.label}</span><span class="status bad">⚠ Needs Work</span></div>`).join('')}
+        <div style="margin-top:16px;padding:12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+          <strong>Customer Authorization:</strong><br/><br/>
+          I authorize Cloud Ebikes to proceed with the above repairs.<br/><br/>
+          Signature: _________________________ &nbsp;&nbsp; Date: _____________
+        </div>` : ''}
       <div class="footer">Cloud Ebikes · 1991 Main St, Vancouver</div>
     </body></html>`)
     w.document.close(); w.print()
   }
 
-  const reset = () => { setAssessmentSelected([]); setWorkSelected([]); setBuildChecks({}); setCustomerName(''); setBikeDesc(''); setAssessmentNote(''); setWorkNote(''); setCopied(false) }
+  const printJobReport = () => {
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head><title>Job Completion Report</title><style>${baseCSS}</style></head><body>
+      ${headerHTML('Job Completion Report')}
+      ${Object.entries(ASSESSMENT_ITEMS).map(([cat, items]) => {
+        const catItems = items.filter(i => assessment[i.id] === 'needs_work')
+        if (!catItems.length) return ''
+        return `<div class="section-header">${cat}</div>
+          ${catItems.map(i => `<div class="item"><span>${i.label}</span>
+            <span class="status ${jobDone[i.id] ? 'done' : 'bad'}">${jobDone[i.id] ? '✓ Completed' : 'Pending'}</span>
+          </div>`).join('')}`
+      }).join('')}
+      ${jobNote.trim() ? `<div class="section-header">Job Notes</div><div style="font-size:13px;padding:4px 0">${jobNote}</div>` : ''}
+      <div class="footer">Cloud Ebikes · 1991 Main St, Vancouver</div>
+    </body></html>`)
+    w.document.close(); w.print()
+  }
 
-  const CheckItem = ({ item, selected, onToggle, color }) => (
-    <div onClick={() => onToggle(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: selected ? (color === 'green' ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.1)') : 'var(--bg3)', border: `1px solid ${selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'var(--border)'}`, transition: 'all 0.15s' }}>
-      <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'var(--border2)'}`, background: selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {selected && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+  const printBuildChecklist = () => {
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head><title>Build Checklist</title><style>${baseCSS}</style></head><body>
+      ${headerHTML('Bike Build Checklist')}
+      <div style="font-size:13px;color:#555;margin-bottom:12px">Progress: ${checkedCount}/${totalCount} items completed</div>
+      ${BUILD_CHECKLIST.map(section => `
+        <div class="section-header">${section.section}</div>
+        ${section.items.map(item => `<div class="check-item">
+          <div class="box${buildChecks[item.id] ? ' checked' : ''}">${buildChecks[item.id] ? '✓' : ''}</div>
+          <span>${item.label}</span>
+        </div>`).join('')}
+      `).join('')}
+      <div class="footer">Cloud Ebikes · 1991 Main St, Vancouver</div>
+    </body></html>`)
+    w.document.close(); w.print()
+  }
+
+  const copy = () => {
+    const lines = []
+    lines.push('BIKE ASSESSMENT')
+    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
+    if (customerName) lines.push(`Customer: ${customerName}`)
+    if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
+    lines.push(`Date: ${today}`)
+    if (user?.name) lines.push(`Technician: ${user.name}`)
+    lines.push('')
+    Object.entries(ASSESSMENT_ITEMS).forEach(([cat, items]) => {
+      const catItems = items.filter(i => assessment[i.id])
+      if (!catItems.length) return
+      lines.push(cat.toUpperCase())
+      catItems.forEach(i => lines.push(`  ${assessment[i.id] === 'good' ? '✓ Good' : '⚠ Needs Work'} — ${i.label}`))
+    })
+    if (assessmentNote.trim()) { lines.push(''); lines.push('Notes: ' + assessmentNote) }
+    navigator.clipboard.writeText(lines.join('\n')).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  const AssessRow = ({ item }) => {
+    const val = assessment[item.id]
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ flex: 1, fontSize: 13 }}>{item.label}</div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button onClick={() => setAssess(item.id, 'good')} style={{ ...S.btn, ...S.btnSm, fontSize: 11, background: val === 'good' ? 'rgba(34,197,94,0.2)' : 'var(--bg3)', borderColor: val === 'good' ? 'var(--green)' : 'var(--border2)', color: val === 'good' ? 'var(--green)' : 'var(--text2)', minWidth: 68 }}>✓ Good</button>
+          <button onClick={() => setAssess(item.id, 'needs_work')} style={{ ...S.btn, ...S.btnSm, fontSize: 11, background: val === 'needs_work' ? 'rgba(239,68,68,0.15)' : 'var(--bg3)', borderColor: val === 'needs_work' ? 'var(--red)' : 'var(--border2)', color: val === 'needs_work' ? '#fca5a5' : 'var(--text2)', minWidth: 104 }}>⚠ Needs Work</button>
+        </div>
       </div>
-      <span style={{ fontSize: 13, color: selected ? 'var(--text)' : 'var(--text2)' }}>{item}</span>
-    </div>
-  )
+    )
+  }
 
   return (
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>📋 Service Report</div>
-          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Assess, record work, and generate a report for the customer</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Assess → get approval → complete job → print report</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={reset} style={S.btn}>↺ Reset</button>
-          <button onClick={copy} style={{ ...S.btn, ...(copied ? S.btnG : {}) }}>{copied ? '✓ Copied' : '📋 Copy'}</button>
-          <button onClick={print} style={{ ...S.btn, ...S.btnP }}>🖨️ Print</button>
         </div>
       </div>
 
@@ -2800,62 +2767,99 @@ function ServiceNotesPage({ user }) {
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
         {[
-          { id: 'assessment', label: '🔍 Assessment', count: assessmentSelected.length },
-          { id: 'work', label: '🔧 Work Report', count: workSelected.length },
-          { id: 'checklist', label: '✅ Build Checklist', count: checkedCount > 0 ? `${checkedCount}/${totalCount}` : 0 },
+          { id: 'assessment', label: '🔍 Assessment', sub: assessedCount > 0 ? `${assessedCount} assessed` : null },
+          { id: 'job', label: '🔧 Job Report', sub: needsWorkItems.length > 0 ? `${jobDoneCount}/${needsWorkItems.length} done` : null },
+          { id: 'checklist', label: '✅ Build Checklist', sub: checkedCount > 0 ? `${checkedCount}/${totalCount}` : null },
         ].map(t => (
-          <button key={t.id} onClick={() => setMainTab(t.id)} style={{ ...S.btn, ...(mainTab === t.id ? S.btnP : {}), fontSize: 13 }}>
-            {t.label}
-            {t.count > 0 && <span style={{ marginLeft: 5, fontSize: 10, background: 'rgba(255,255,255,0.25)', borderRadius: 10, padding: '1px 6px' }}>{t.count}</span>}
+          <button key={t.id} onClick={() => setMainTab(t.id)} style={{ ...S.btn, ...(mainTab === t.id ? S.btnP : {}), fontSize: 13, flexDirection: 'column', alignItems: 'flex-start', gap: 0, padding: '7px 12px' }}>
+            <span>{t.label}</span>
+            {t.sub && <span style={{ fontSize: 10, opacity: 0.75, fontFamily: 'var(--mono)' }}>{t.sub}</span>}
           </button>
         ))}
       </div>
 
       {mainTab === 'assessment' && (
         <>
+          <div style={{ ...S.card, marginBottom: 12, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)' }}>
+            <div style={{ fontSize: 13, color: 'var(--text2)' }}>Mark each item <span style={{ color: 'var(--green)', fontWeight: 600 }}>✓ Good</span> or <span style={{ color: 'var(--red)', fontWeight: 600 }}>⚠ Needs Work</span>. Then print and get customer approval before starting any work.</div>
+          </div>
           <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-            {Object.keys(ASSESSMENT_ITEMS).map(t => (
-              <button key={t} onClick={() => setAssessmentTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: assessmentTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${assessmentTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {t}
-                {ASSESSMENT_ITEMS[t].some(i => assessmentSelected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
-              </button>
-            ))}
+            {Object.keys(ASSESSMENT_ITEMS).map(t => {
+              const catItems = ASSESSMENT_ITEMS[t]
+              const hasIssues = catItems.some(i => assessment[i.id] === 'needs_work')
+              const allGood = catItems.every(i => assessment[i.id] === 'good')
+              return (
+                <button key={t} onClick={() => setAssessmentTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: assessmentTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${assessmentTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {t}
+                  {hasIssues && <span style={{ marginLeft: 5, width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', display: 'inline-block', verticalAlign: 'middle' }} />}
+                  {!hasIssues && allGood && catItems.length > 0 && <span style={{ marginLeft: 5, width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', verticalAlign: 'middle' }} />}
+                </button>
+              )
+            })}
           </div>
           <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
-            <div style={{ display: 'grid', gap: 6 }}>
-              {ASSESSMENT_ITEMS[assessmentTab].map(item => (
-                <CheckItem key={item} item={item} selected={assessmentSelected.includes(item)} onToggle={toggleAssessment} color="blue" />
-              ))}
-            </div>
+            {ASSESSMENT_ITEMS[assessmentTab].map(item => <AssessRow key={item.id} item={item} />)}
           </div>
           <div style={S.card}>
             <div style={S.cardTitle}>Assessment Notes</div>
-            <textarea value={assessmentNote} onChange={e => setAssessmentNote(e.target.value)} placeholder="Additional findings, customer description, diagnostic notes..." style={{ ...S.textarea, minHeight: 80 }} />
+            <textarea value={assessmentNote} onChange={e => setAssessmentNote(e.target.value)} placeholder="Additional findings, customer description..." style={{ ...S.textarea, minHeight: 70 }} />
+          </div>
+          {needsWorkItems.length > 0 && (
+            <div style={{ ...S.card, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fca5a5', marginBottom: 8 }}>⚠ {needsWorkItems.length} items need attention</div>
+              {needsWorkItems.map(i => <div key={i.id} style={{ fontSize: 13, color: 'var(--text2)', padding: '3px 0' }}>• {i.label}</div>)}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button onClick={copy} style={{ ...S.btn, ...(copied ? S.btnG : {}) }}>{copied ? '✓ Copied' : '📋 Copy Assessment'}</button>
+            <button onClick={printAssessment} style={{ ...S.btn, ...S.btnP }}>🖨️ Print Assessment</button>
           </div>
         </>
       )}
 
-      {mainTab === 'work' && (
+      {mainTab === 'job' && (
         <>
-          <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-            {Object.keys(SERVICE_ITEMS).map(t => (
-              <button key={t} onClick={() => setWorkTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: workTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${workTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {t}
-                {SERVICE_ITEMS[t].some(i => workSelected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
-              </button>
-            ))}
-          </div>
-          <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
-            <div style={{ display: 'grid', gap: 6 }}>
-              {SERVICE_ITEMS[workTab].map(item => (
-                <CheckItem key={item} item={item} selected={workSelected.includes(item)} onToggle={toggleWork} color="blue" />
-              ))}
+          {needsWorkItems.length === 0 ? (
+            <div style={{ ...S.card, fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: 24 }}>
+              No items marked as Needs Work in Assessment yet. Complete the assessment first.
             </div>
-          </div>
-          <div style={S.card}>
-            <div style={S.cardTitle}>Work Notes</div>
-            <textarea value={workNote} onChange={e => setWorkNote(e.target.value)} placeholder="Additional work done, parts replaced, recommendations..." style={{ ...S.textarea, minHeight: 80 }} />
-          </div>
+          ) : (
+            <>
+              <div style={{ ...S.card, marginBottom: 12, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                <div style={{ fontSize: 13, color: 'var(--text2)' }}>Check off each item as it is completed. These are the items the customer approved.</div>
+              </div>
+              {Object.entries(ASSESSMENT_ITEMS).map(([cat, items]) => {
+                const catItems = items.filter(i => assessment[i.id] === 'needs_work')
+                if (!catItems.length) return null
+                return (
+                  <div key={cat} style={S.card}>
+                    <div style={S.cardTitle}>{cat}</div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {catItems.map(item => (
+                        <div key={item.id} onClick={() => toggleJob(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: jobDone[item.id] ? 'rgba(34,197,94,0.1)' : 'var(--bg3)', border: `1px solid ${jobDone[item.id] ? 'var(--green)' : 'var(--border)'}`, transition: 'all 0.15s' }}>
+                          <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${jobDone[item.id] ? 'var(--green)' : 'var(--border2)'}`, background: jobDone[item.id] ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {jobDone[item.id] && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+                          </div>
+                          <span style={{ fontSize: 13, color: jobDone[item.id] ? 'var(--text)' : 'var(--text2)', textDecoration: jobDone[item.id] ? 'line-through' : 'none' }}>{item.label}</span>
+                          {jobDone[item.id] && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)' }}>Done</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              <div style={S.card}>
+                <div style={S.cardTitle}>Job Notes</div>
+                <textarea value={jobNote} onChange={e => setJobNote(e.target.value)} placeholder="Parts used, additional work done, recommendations..." style={{ ...S.textarea, minHeight: 70 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: jobDoneCount === needsWorkItems.length ? 'var(--green)' : 'var(--text2)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                  {jobDoneCount}/{needsWorkItems.length} completed
+                </div>
+                <button onClick={printJobReport} style={{ ...S.btn, ...S.btnP, marginLeft: 'auto' }}>🖨️ Print Job Report</button>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -2885,13 +2889,15 @@ function ServiceNotesPage({ user }) {
               </div>
             </div>
           ))}
-          {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4, marginBottom: 16 }}>Completed by: {user.name} · {today} · Cloud Ebikes · 1991 Main St, Vancouver</div>}
+          {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4, marginBottom: 8 }}>Completed by: {user.name} · {today} · Cloud Ebikes · 1991 Main St, Vancouver</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button onClick={printBuildChecklist} style={{ ...S.btn, ...S.btnP }}>🖨️ Print Checklist</button>
+          </div>
         </>
       )}
     </div>
   )
 }
-
 
 function WorkshopGuidesPage({ isMgr }) {
   const [tab, setTab] = useState('ebike')
