@@ -2565,6 +2565,55 @@ const SERVICE_ITEMS = {
   ],
 }
 
+const ASSESSMENT_ITEMS = {
+  'Customer Complaint': [
+    'Not shifting properly',
+    'Brakes not working well',
+    'Bike making noise while riding',
+    'Battery not charging',
+    'Motor not working / no assist',
+    'Display not turning on',
+    'Flat tire',
+    'Wheel wobbling',
+    'Bike not turning on',
+    'Throttle not working',
+    'Pedal assist not engaging',
+    'Brake rubbing',
+    'Chain slipping',
+    'Pedals hard to turn',
+    'General tune-up requested',
+    'Pre-delivery inspection requested',
+  ],
+  'Condition on Arrival': [
+    'Bike in good overall condition',
+    'Bike in fair condition — normal wear',
+    'Bike in poor condition — significant wear',
+    'Evidence of crash damage',
+    'Evidence of water damage',
+    'Third-party work previously done',
+    'Missing components noted',
+    'Bike not rideable on arrival',
+    'Bike partially rideable on arrival',
+    'Bike rideable on arrival',
+  ],
+  'Issues Found': [
+    'Brake pads worn — replacement needed',
+    'Chain stretched — replacement needed',
+    'Cassette worn — replacement needed',
+    'Tire worn or damaged',
+    'Wheel out of true',
+    'Headset loose or rough',
+    'Bottom bracket loose or worn',
+    'Cable housing cracked or frayed',
+    'Battery not holding charge',
+    'Motor making abnormal noise',
+    'Display error code present',
+    'Derailleur hanger bent',
+    'Frame crack or damage found',
+    'Hydraulic brake bleed required',
+  ],
+}
+
 const BUILD_CHECKLIST = [
   { section: 'Handlebar Controls', items: [
     { id: 'grips', label: 'Grips — in place and tight' },
@@ -2609,27 +2658,28 @@ const BUILD_CHECKLIST = [
 ]
 
 function ServiceNotesPage({ user }) {
-  const [tab, setTab] = useState('report')
-  const [selected, setSelected] = useState([])
+  const [mainTab, setMainTab] = useState('assessment')
+  const [assessmentTab, setAssessmentTab] = useState('Customer Complaint')
+  const [workTab, setWorkTab] = useState('Brakes')
+  const [assessmentSelected, setAssessmentSelected] = useState([])
+  const [workSelected, setWorkSelected] = useState([])
   const [buildChecks, setBuildChecks] = useState({})
   const [customerName, setCustomerName] = useState('')
   const [bikeDesc, setBikeDesc] = useState('')
-  const [extraNote, setExtraNote] = useState('')
+  const [assessmentNote, setAssessmentNote] = useState('')
+  const [workNote, setWorkNote] = useState('')
   const [copied, setCopied] = useState(false)
-
-  const reportTabs = Object.keys(SERVICE_ITEMS)
-  const [reportTab, setReportTab] = useState('Brakes')
-
-  const toggle = (item) => setSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
-  const isSelected = (item) => selected.includes(item)
-  const toggleCheck = (id) => setBuildChecks(c => ({ ...c, [id]: !c[id] }))
 
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })
   const allCheckItems = BUILD_CHECKLIST.flatMap(s => s.items)
   const checkedCount = allCheckItems.filter(i => buildChecks[i.id]).length
   const totalCount = allCheckItems.length
 
-  const buildReport = () => {
+  const toggleAssessment = (item) => setAssessmentSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
+  const toggleWork = (item) => setWorkSelected(s => s.includes(item) ? s.filter(x => x !== item) : [...s, item])
+  const toggleCheck = (id) => setBuildChecks(c => ({ ...c, [id]: !c[id] }))
+
+  const buildFullReport = () => {
     const lines = []
     lines.push('SERVICE REPORT')
     lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
@@ -2638,109 +2688,103 @@ function ServiceNotesPage({ user }) {
     if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
     lines.push(`Date: ${today}`)
     if (user?.name) lines.push(`Technician: ${user.name}`)
-    lines.push('')
-    lines.push('WORK PERFORMED:')
-    if (selected.length === 0) lines.push('— No items selected')
-    Object.keys(SERVICE_ITEMS).forEach(cat => {
-      const catItems = selected.filter(s => SERVICE_ITEMS[cat].includes(s))
-      if (catItems.length > 0) {
-        lines.push('')
-        lines.push(cat.toUpperCase())
-        catItems.forEach(item => lines.push(`• ${item}`))
-      }
-    })
-    if (extraNote.trim()) { lines.push(''); lines.push('ADDITIONAL NOTES:'); lines.push(extraNote.trim()) }
-    lines.push('')
-    lines.push('─────────────────────────────────────')
-    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
-    return lines.join('\n')
-  }
-
-  const buildChecklistReport = () => {
-    const lines = []
-    lines.push('BIKE BUILD CHECKLIST')
-    lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
-    lines.push('─────────────────────────────────────')
-    if (customerName) lines.push(`Customer: ${customerName}`)
-    if (bikeDesc) lines.push(`Bike: ${bikeDesc}`)
-    lines.push(`Date: ${today}`)
-    if (user?.name) lines.push(`Technician: ${user.name}`)
-    lines.push(`Completed: ${checkedCount} of ${totalCount} items`)
-    lines.push('')
-    BUILD_CHECKLIST.forEach(section => {
-      lines.push(section.section.toUpperCase())
-      section.items.forEach(item => {
-        lines.push(`${buildChecks[item.id] ? '☑' : '☐'} ${item.label}`)
-      })
+    if (assessmentSelected.length > 0 || assessmentNote.trim()) {
       lines.push('')
-    })
-    if (extraNote.trim()) { lines.push('NOTES:'); lines.push(extraNote.trim()); lines.push('') }
+      lines.push('ASSESSMENT:')
+      Object.keys(ASSESSMENT_ITEMS).forEach(cat => {
+        const catItems = assessmentSelected.filter(s => ASSESSMENT_ITEMS[cat].includes(s))
+        if (catItems.length > 0) { lines.push(`${cat}:`); catItems.forEach(i => lines.push(`  • ${i}`)) }
+      })
+      if (assessmentNote.trim()) lines.push(`Notes: ${assessmentNote.trim()}`)
+    }
+    if (workSelected.length > 0 || workNote.trim()) {
+      lines.push('')
+      lines.push('WORK PERFORMED:')
+      Object.keys(SERVICE_ITEMS).forEach(cat => {
+        const catItems = workSelected.filter(s => SERVICE_ITEMS[cat].includes(s))
+        if (catItems.length > 0) { lines.push(`${cat}:`); catItems.forEach(i => lines.push(`  • ${i}`)) }
+      })
+      if (workNote.trim()) lines.push(`Notes: ${workNote.trim()}`)
+    }
+    lines.push('')
     lines.push('─────────────────────────────────────')
     lines.push('Cloud Ebikes · 1991 Main St, Vancouver')
     return lines.join('\n')
   }
 
   const copy = () => {
-    const text = tab === 'checklist' ? buildChecklistReport() : buildReport()
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+    navigator.clipboard.writeText(buildFullReport()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
   }
 
   const print = () => {
-    const isChecklist = tab === 'checklist'
-    const content = isChecklist ? buildChecklistReport() : buildReport()
     const w = window.open('', '_blank')
-    w.document.write(`<!DOCTYPE html><html><head><title>${isChecklist ? 'Build Checklist' : 'Service Report'}</title><style>
-      body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;font-size:14px;line-height:1.6;color:#111;}
-      h1{font-size:20px;font-weight:bold;margin:0 0 4px;}
-      .sub{font-size:13px;color:#555;margin-bottom:16px;}
-      .meta{margin-bottom:16px;}
-      .meta div{margin-bottom:2px;}
-      .section{font-weight:bold;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px;color:#333;border-bottom:1px solid #ddd;padding-bottom:3px;}
-      .item{padding:3px 0;display:flex;gap:8px;}
-      .check{width:16px;height:16px;border:1.5px solid #333;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
-      .done{background:#111;color:white;font-size:11px;}
-      .footer{margin-top:30px;padding-top:12px;border-top:1px solid #ccc;font-size:12px;color:#666;text-align:center;}
+    const assessmentGrouped = Object.keys(ASSESSMENT_ITEMS).map(cat => ({
+      cat, items: assessmentSelected.filter(s => ASSESSMENT_ITEMS[cat].includes(s))
+    })).filter(g => g.items.length > 0)
+    const workGrouped = Object.keys(SERVICE_ITEMS).map(cat => ({
+      cat, items: workSelected.filter(s => SERVICE_ITEMS[cat].includes(s))
+    })).filter(g => g.items.length > 0)
+    w.document.write(`<!DOCTYPE html><html><head><title>Service Report</title><style>
+      body{font-family:Arial,sans-serif;max-width:620px;margin:40px auto;font-size:14px;line-height:1.6;color:#111;}
+      h1{font-size:22px;font-weight:bold;margin:0 0 2px;}
+      .shop{font-size:13px;color:#555;margin-bottom:16px;}
+      .meta div{margin-bottom:2px;font-size:13px;}
+      .section-header{font-weight:bold;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;margin:16px 0 6px;color:#444;border-bottom:1px solid #ddd;padding-bottom:3px;}
+      .cat{font-size:12px;font-weight:bold;color:#333;margin:10px 0 4px;}
+      .item{padding:2px 0 2px 16px;font-size:13px;}
+      .check-item{display:flex;gap:8px;padding:4px 0;font-size:13px;}
+      .box{width:16px;height:16px;border:1.5px solid #333;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:11px;}
+      .done{background:#111;color:white;}
+      .footer{margin-top:28px;padding-top:10px;border-top:1px solid #ccc;font-size:12px;color:#666;text-align:center;}
       @media print{body{margin:20px;}}
     </style></head><body>
-      <h1>${isChecklist ? 'Bike Build Checklist' : 'Service Report'}</h1>
-      <div class="sub">Cloud Ebikes · 1991 Main St, Vancouver</div>
+      <h1>Service Report</h1>
+      <div class="shop">Cloud Ebikes · 1991 Main St, Vancouver</div>
       <div class="meta">
         ${customerName ? `<div><strong>Customer:</strong> ${customerName}</div>` : ''}
         ${bikeDesc ? `<div><strong>Bike:</strong> ${bikeDesc}</div>` : ''}
         <div><strong>Date:</strong> ${today}</div>
         ${user?.name ? `<div><strong>Technician:</strong> ${user.name}</div>` : ''}
-        ${isChecklist ? `<div><strong>Progress:</strong> ${checkedCount} of ${totalCount} items completed</div>` : ''}
       </div>
-      ${isChecklist ? BUILD_CHECKLIST.map(section => `
-        <div class="section">${section.section}</div>
-        ${section.items.map(item => `
-          <div class="item">
-            <div class="check${buildChecks[item.id] ? ' done' : ''}">${buildChecks[item.id] ? '✓' : ''}</div>
-            <span>${item.label}</span>
-          </div>`).join('')}
-      `).join('') : Object.keys(SERVICE_ITEMS).map(cat => {
-        const catItems = selected.filter(s => SERVICE_ITEMS[cat].includes(s))
-        if (!catItems.length) return ''
-        return `<div class="section">${cat}</div>${catItems.map(i => `<div class="item"><span>•</span><span>${i}</span></div>`).join('')}`
-      }).join('')}
-      ${extraNote.trim() ? `<div class="section">Additional Notes</div><div>${extraNote}</div>` : ''}
+      ${assessmentGrouped.length > 0 || assessmentNote.trim() ? `
+        <div class="section-header">Assessment</div>
+        ${assessmentGrouped.map(g => `<div class="cat">${g.cat}</div>${g.items.map(i => `<div class="item">• ${i}</div>`).join('')}`).join('')}
+        ${assessmentNote.trim() ? `<div class="cat">Notes</div><div class="item">${assessmentNote}</div>` : ''}
+      ` : ''}
+      ${workGrouped.length > 0 || workNote.trim() ? `
+        <div class="section-header">Work Performed</div>
+        ${workGrouped.map(g => `<div class="cat">${g.cat}</div>${g.items.map(i => `<div class="item">• ${i}</div>`).join('')}`).join('')}
+        ${workNote.trim() ? `<div class="cat">Notes</div><div class="item">${workNote}</div>` : ''}
+      ` : ''}
+      ${checkedCount > 0 ? `
+        <div class="section-header">Build Checklist (${checkedCount}/${totalCount})</div>
+        ${BUILD_CHECKLIST.map(section => `
+          <div class="cat">${section.section}</div>
+          ${section.items.map(item => `<div class="check-item"><div class="box${buildChecks[item.id] ? ' done' : ''}">${buildChecks[item.id] ? '✓' : ''}</div><span>${item.label}</span></div>`).join('')}
+        `).join('')}
+      ` : ''}
       <div class="footer">Cloud Ebikes · 1991 Main St, Vancouver</div>
     </body></html>`)
     w.document.close(); w.print()
   }
 
-  const reset = () => { setSelected([]); setBuildChecks({}); setCustomerName(''); setBikeDesc(''); setExtraNote(''); setCopied(false) }
+  const reset = () => { setAssessmentSelected([]); setWorkSelected([]); setBuildChecks({}); setCustomerName(''); setBikeDesc(''); setAssessmentNote(''); setWorkNote(''); setCopied(false) }
 
-  const groupedSelected = Object.keys(SERVICE_ITEMS).map(t => ({
-    tab: t, items: selected.filter(s => SERVICE_ITEMS[t].includes(s))
-  })).filter(g => g.items.length > 0)
+  const CheckItem = ({ item, selected, onToggle, color }) => (
+    <div onClick={() => onToggle(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: selected ? (color === 'green' ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.1)') : 'var(--bg3)', border: `1px solid ${selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'var(--border)'}`, transition: 'all 0.15s' }}>
+      <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'var(--border2)'}`, background: selected ? (color === 'green' ? 'var(--green)' : 'var(--accent)') : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {selected && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
+      </div>
+      <span style={{ fontSize: 13, color: selected ? 'var(--text)' : 'var(--text2)' }}>{item}</span>
+    </div>
+  )
 
   return (
     <div style={S.page}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>📋 Service Report</div>
-          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Build a service report or bike build checklist to share with customers</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>Assess, record work, and generate a report for the customer</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={reset} style={S.btn}>↺ Reset</button>
@@ -2755,63 +2799,71 @@ function ServiceNotesPage({ user }) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        <button onClick={() => setTab('report')} style={{ ...S.btn, ...(tab === 'report' ? S.btnP : {}), fontSize: 13 }}>📝 Service Report</button>
-        <button onClick={() => setTab('checklist')} style={{ ...S.btn, ...(tab === 'checklist' ? S.btnP : {}), fontSize: 13 }}>✅ Bike Build Checklist {checkedCount > 0 && <span style={{ marginLeft: 4, fontSize: 10, background: 'rgba(255,255,255,0.25)', borderRadius: 10, padding: '1px 6px' }}>{checkedCount}/{totalCount}</span>}</button>
+        {[
+          { id: 'assessment', label: '🔍 Assessment', count: assessmentSelected.length },
+          { id: 'work', label: '🔧 Work Report', count: workSelected.length },
+          { id: 'checklist', label: '✅ Build Checklist', count: checkedCount > 0 ? `${checkedCount}/${totalCount}` : 0 },
+        ].map(t => (
+          <button key={t.id} onClick={() => setMainTab(t.id)} style={{ ...S.btn, ...(mainTab === t.id ? S.btnP : {}), fontSize: 13 }}>
+            {t.label}
+            {t.count > 0 && <span style={{ marginLeft: 5, fontSize: 10, background: 'rgba(255,255,255,0.25)', borderRadius: 10, padding: '1px 6px' }}>{t.count}</span>}
+          </button>
+        ))}
       </div>
 
-      {tab === 'report' && (
+      {mainTab === 'assessment' && (
         <>
           <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-            {reportTabs.map(t => (
-              <button key={t} onClick={() => setReportTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: reportTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${reportTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {Object.keys(ASSESSMENT_ITEMS).map(t => (
+              <button key={t} onClick={() => setAssessmentTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: assessmentTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${assessmentTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {t}
-                {SERVICE_ITEMS[t].some(i => selected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
+                {ASSESSMENT_ITEMS[t].some(i => assessmentSelected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
               </button>
             ))}
           </div>
           <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
             <div style={{ display: 'grid', gap: 6 }}>
-              {SERVICE_ITEMS[reportTab].map(item => (
-                <div key={item} onClick={() => toggle(item)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--rs)', cursor: 'pointer', background: isSelected(item) ? 'rgba(59,130,246,0.1)' : 'var(--bg3)', border: `1px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border)'}`, transition: 'all 0.15s' }}>
-                  <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${isSelected(item) ? 'var(--accent)' : 'var(--border2)'}`, background: isSelected(item) ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {isSelected(item) && <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>✓</span>}
-                  </div>
-                  <span style={{ fontSize: 13, color: isSelected(item) ? 'var(--text)' : 'var(--text2)' }}>{item}</span>
-                </div>
+              {ASSESSMENT_ITEMS[assessmentTab].map(item => (
+                <CheckItem key={item} item={item} selected={assessmentSelected.includes(item)} onToggle={toggleAssessment} color="blue" />
               ))}
             </div>
           </div>
           <div style={S.card}>
-            <div style={S.cardTitle}>Additional Notes</div>
-            <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="Any additional work or observations..." style={{ ...S.textarea, minHeight: 60 }} />
+            <div style={S.cardTitle}>Assessment Notes</div>
+            <textarea value={assessmentNote} onChange={e => setAssessmentNote(e.target.value)} placeholder="Additional findings, customer description, diagnostic notes..." style={{ ...S.textarea, minHeight: 80 }} />
           </div>
-          {selected.length > 0 ? (
-            <div style={S.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div style={S.cardTitle}>Preview ({selected.length} items)</div>
-              </div>
-              {customerName && <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Customer: <strong style={{ color: 'var(--text)' }}>{customerName}</strong>{bikeDesc && <> · {bikeDesc}</>}</div>}
-              {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12, fontFamily: 'var(--mono)' }}>Technician: {user.name} · {today}</div>}
-              {groupedSelected.map(g => (
-                <div key={g.tab} style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.tab}</div>
-                  {g.items.map(item => <div key={item} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>•</span>{item}</div>)}
-                </div>
-              ))}
-              {extraNote.trim() && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}><div style={{ fontSize: 11, color: 'var(--accent2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase' }}>Additional Notes</div><div style={{ fontSize: 13, color: 'var(--text2)' }}>{extraNote}</div></div>}
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>Cloud Ebikes · 1991 Main St, Vancouver</div>
-            </div>
-          ) : (
-            <div style={{ ...S.card, color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Select items above to build the service report</div>
-          )}
         </>
       )}
 
-      {tab === 'checklist' && (
+      {mainTab === 'work' && (
+        <>
+          <div style={{ display: 'flex', gap: 2, marginBottom: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            {Object.keys(SERVICE_ITEMS).map(t => (
+              <button key={t} onClick={() => setWorkTab(t)} style={{ padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', color: workTab === t ? 'var(--accent2)' : 'var(--text2)', borderBottom: `2px solid ${workTab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, fontFamily: 'var(--font)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {t}
+                {SERVICE_ITEMS[t].some(i => workSelected.includes(i)) && <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', verticalAlign: 'middle' }} />}
+              </button>
+            ))}
+          </div>
+          <div style={{ ...S.card, borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: 0 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {SERVICE_ITEMS[workTab].map(item => (
+                <CheckItem key={item} item={item} selected={workSelected.includes(item)} onToggle={toggleWork} color="blue" />
+              ))}
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardTitle}>Work Notes</div>
+            <textarea value={workNote} onChange={e => setWorkNote(e.target.value)} placeholder="Additional work done, parts replaced, recommendations..." style={{ ...S.textarea, minHeight: 80 }} />
+          </div>
+        </>
+      )}
+
+      {mainTab === 'checklist' && (
         <>
           <div style={{ ...S.card, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={S.cardTitle}>Progress</div>
+              <div style={S.cardTitle}>Build Progress</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: checkedCount === totalCount ? 'var(--green)' : 'var(--amber)', fontFamily: 'var(--mono)' }}>{checkedCount}/{totalCount}</div>
             </div>
             <div style={{ background: 'var(--bg3)', borderRadius: 20, height: 6, overflow: 'hidden' }}>
@@ -2833,16 +2885,13 @@ function ServiceNotesPage({ user }) {
               </div>
             </div>
           ))}
-          <div style={S.card}>
-            <div style={S.cardTitle}>Notes</div>
-            <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} placeholder="Any build notes or observations..." style={{ ...S.textarea, minHeight: 60 }} />
-          </div>
           {user?.name && <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 4, marginBottom: 16 }}>Completed by: {user.name} · {today} · Cloud Ebikes · 1991 Main St, Vancouver</div>}
         </>
       )}
     </div>
   )
 }
+
 
 function WorkshopGuidesPage({ isMgr }) {
   const [tab, setTab] = useState('ebike')
