@@ -474,7 +474,7 @@ function BuildCard({ build, users, onUpdate, onDelete }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            {needsContact && <button onClick={() => setShowSMS(true)} style={{ ...S.btn, ...S.btnA, ...S.btnSm }}>📱</button>}
+            <button onClick={() => setShowSMS(true)} style={{ ...S.btn, ...S.btnSm, ...(needsContact ? S.btnA : {}) }}>📱</button>
             <button onClick={() => { setForm({ ...build }); setEditing(true) }} style={{ ...S.btn, ...S.btnSm }}>✏️</button>
             <button onClick={() => onDelete(build.id)} style={{ ...S.btn, ...S.btnD, ...S.btnSm }}>✕</button>
           </div>
