@@ -2151,14 +2151,27 @@ Take action immediately when the request is clear. Confirm what you did after th
 
 // ── LIGHTSPEED SERVICE QUEUE ──
 
-const SERVICE_STATUSES = ['NEW', 'IN_PROGRESS', 'ON_HOLD', 'READY_FOR_PICKUP', 'COMPLETED', 'CANCELLED']
-const SERVICE_STATUS_COLOR = {
-  'NEW': 'var(--amber)',
-  'IN_PROGRESS': 'var(--accent)',
-  'ON_HOLD': 'var(--text3)',
-  'READY_FOR_PICKUP': 'var(--green)',
-  'COMPLETED': 'var(--text3)',
-  'CANCELLED': 'var(--red)',
+// Status colors map both the API enum (NEW, IN_PROGRESS) and pretty display names
+// to colors. Lightspeed lets retailers add custom statuses (Awaiting Customer,
+// Awaiting Part, Service DONE, etc) so we color any unknown ones with a default.
+const SERVICE_STATUS_COLOR = (statusOrName) => {
+  const s = (statusOrName || '').toUpperCase().replace(/\s+/g, '_')
+  if (s === 'NEW' || s === 'SERVICE') return 'var(--amber)'
+  if (s === 'IN_PROGRESS' || s === 'IN_PROG') return 'var(--accent)'
+  if (s === 'AWAITING_PART' || s === 'AWAITING_PARTS') return 'var(--purple)'
+  if (s === 'AWAITING_CUSTOMER') return 'var(--purple)'
+  if (s === 'ON_HOLD' || s === 'HOLD') return 'var(--text3)'
+  if (s === 'READY_FOR_PICKUP' || s === 'READY') return 'var(--green)'
+  if (s === 'COMPLETED' || s === 'COMPLETE' || s === 'SERVICE_DONE' || s === 'DONE') return 'var(--green)'
+  if (s === 'CLOSED') return 'var(--text3)'
+  if (s === 'CANCELLED' || s === 'CANCELED') return 'var(--red)'
+  return 'var(--text2)'
+}
+
+// "Open" set (anything not completed/closed/cancelled)
+const SERVICE_OPEN_STATUSES = (status, displayName) => {
+  const s = (displayName || status || '').toUpperCase().replace(/\s+/g, '_')
+  return !['COMPLETED', 'COMPLETE', 'SERVICE_DONE', 'DONE', 'CLOSED', 'CANCELLED', 'CANCELED'].includes(s)
 }
 
 async function lsCall(action, payload = {}) {
@@ -2305,12 +2318,12 @@ function NewServiceOrderModal({ onClose, onCreated }) {
               👤 {[customer.first_name, customer.last_name].filter(Boolean).join(' ')} · {customer.phone || customer.mobile || customer.email || ''}
             </div>
             <div style={{ display: 'grid', gap: 12 }}>
-              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE / ITEM NAME</div><input value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })} placeholder="e.g. Aventon Pace 500.3 Step-Through" style={S.input} /></div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE / PRODUCT DESCRIPTION</div><input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="e.g. Himiway A7, 2 bikes  ·  shown on the queue list" style={S.input} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE / ITEM NAME (OPTIONAL)</div><input value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })} placeholder="e.g. Aventon Pace 500.3" style={S.input} /></div>
                 <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>SERIAL NUMBER</div><input value={form.serial_number} onChange={e => setForm({ ...form, serial_number: e.target.value })} style={S.input} /></div>
-                <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>LOCATION IN STORE</div><input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="e.g. Service Bay 2" style={S.input} /></div>
               </div>
-              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>DESCRIPTION</div><input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Color, size, other identifiers" style={S.input} /></div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>DESCRIPTION (OPTIONAL)</div><input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Color, size, other identifiers" style={S.input} /></div>
               <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>REPORTED ISSUE</div><textarea value={form.initial_condition} onChange={e => setForm({ ...form, initial_condition: e.target.value })} placeholder="What the customer is reporting..." style={{ ...S.textarea, minHeight: 70 }} /></div>
               <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>INTERNAL NOTES</div><textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Diagnostic notes, parts ordered, etc." style={{ ...S.textarea, minHeight: 60 }} /></div>
               {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)' }}>{err}</div>}
@@ -2326,7 +2339,7 @@ function NewServiceOrderModal({ onClose, onCreated }) {
   )
 }
 
-function ServiceOrderDetail({ order, customer, onClose, onUpdate, user }) {
+function ServiceOrderDetail({ order, customer, lsUser, onClose, onUpdate, user }) {
   const [showSMS, setShowSMS] = useState(false)
   const [notes, setNotes] = useState(order.portal_notes || '')
   const [saving, setSaving] = useState(false)
@@ -2338,62 +2351,80 @@ function ServiceOrderDetail({ order, customer, onClose, onUpdate, user }) {
     setSaving(false)
   }
 
-  const updateStatus = async (newStatus) => {
-    await sb.from('service_orders_cache').update({ portal_status: newStatus }).eq('id', order.id)
-    if (onUpdate) onUpdate({ ...order, portal_status: newStatus })
-  }
-
   const phone = customer?.phone || customer?.mobile || ''
   const name = customer ? [customer.first_name, customer.last_name].filter(Boolean).join(' ') : '(no customer)'
+  const productDesc = order.raw?.location || ''
+  const statusLabel = order.raw?.status_details?.display_name || order.status || 'NEW'
+  const sc = SERVICE_STATUS_COLOR(statusLabel)
+  const lsNotes = order.raw?.notes || []
+  const item = order.raw?.service_item || {}
 
   // fake build object so we can reuse SMSModal
   const fakeBuild = {
     id: order.id,
     customer_name: name,
     customer_phone: phone,
-    bike_description: order.raw?.service_items?.[0]?.item_name || order.raw?.item_name || '',
+    bike_description: productDesc,
   }
 
   return (
-    <div style={{ ...S.card, position: 'sticky', top: 20 }}>
+    <div style={{ ...S.card, position: 'sticky', top: 20, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
       {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={() => sb.from('service_orders_cache').update({ last_messaged: nowISO() }).eq('id', order.id)} />}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 2 }}>SERVICE ORDER</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 2 }}>
+            SERVICE ORDER {order.raw?.sale_invoice_number ? `#${order.raw.sale_invoice_number}` : ''}
+          </div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>{name}</div>
-          {phone && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{phone}</div>}
+          {phone && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, fontFamily: 'var(--mono)' }}>{phone}</div>}
+          {customer?.email && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>{customer.email}</div>}
         </div>
         <button onClick={onClose} style={{ ...S.btn, ...S.btnSm }}>✕</button>
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={S.badge(SERVICE_STATUS_COLOR[order.status] || 'var(--text2)')}>{order.status || 'NEW'}</span>
-        {order.portal_status && <span style={S.badge('var(--accent)')}>{order.portal_status}</span>}
+        <span style={S.badge(sc)}>{statusLabel}</span>
+        {order.portal_status && <span style={S.badge('var(--accent)')}>Portal: {order.portal_status}</span>}
       </div>
 
-      <div style={{ display: 'grid', gap: 10, fontSize: 13 }}>
-        {order.raw?.item_name && (
-          <div><span style={{ color: 'var(--text2)' }}>Bike: </span>{order.raw.item_name}</div>
+      <div style={{ display: 'grid', gap: 8, fontSize: 13, padding: 12, background: 'var(--bg3)', borderRadius: 'var(--rs)', marginBottom: 14 }}>
+        {productDesc && (
+          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>BIKE</span><div style={{ fontWeight: 500, marginTop: 2 }}>{productDesc}</div></div>
         )}
-        {order.raw?.serial_number && (
-          <div><span style={{ color: 'var(--text2)' }}>Serial: </span><span style={{ fontFamily: 'var(--mono)' }}>{order.raw.serial_number}</span></div>
+        {item?.serial_number && (
+          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>SERIAL</span><div style={{ fontFamily: 'var(--mono)', marginTop: 2 }}>{item.serial_number}</div></div>
         )}
-        {order.note && (
-          <div style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12 }}>{order.note}</div>
+        {item?.description && (
+          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>DESCRIPTION</span><div style={{ marginTop: 2 }}>{item.description}</div></div>
         )}
+        {item?.initial_condition && (
+          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>INITIAL CONDITION</span><div style={{ marginTop: 2 }}>{item.initial_condition}</div></div>
+        )}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', paddingTop: 4 }}>
+          {lsUser && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>ASSIGNED</span><div style={{ marginTop: 2 }}>{lsUser.name}</div></div>}
+          {order.created_at_ls && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>CREATED</span><div style={{ marginTop: 2 }}>{fmtDate(order.created_at_ls)}</div></div>}
+          {order.updated_at_ls && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>UPDATED</span><div style={{ marginTop: 2 }}>{fmtDate(order.updated_at_ls)}</div></div>}
+        </div>
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PORTAL STATUS</div>
-        <select value={order.portal_status || ''} onChange={e => updateStatus(e.target.value)} style={S.select}>
-          <option value="">(none)</option>
-          {SERVICE_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-        </select>
-      </div>
+      {lsNotes.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 6 }}>WORK NOTES FROM LIGHTSPEED</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {lsNotes.map((n, i) => (
+              <div key={i} style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12, borderLeft: '2px solid var(--accent)' }}>
+                <div style={{ marginBottom: 4 }}>{n.body || n.note || ''}</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{n.created_at ? fmt(n.created_at) : ''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>INTERNAL NOTES (PORTAL ONLY)</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} style={{ ...S.textarea, minHeight: 70 }} placeholder="Diagnostic notes, who's working on it, etc." />
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PORTAL NOTES (NOT IN LIGHTSPEED)</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} style={{ ...S.textarea, minHeight: 70 }} placeholder="Internal notes only visible in the portal..." />
         {saving && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Saving...</div>}
       </div>
 
@@ -2409,11 +2440,12 @@ function ServiceOrderDetail({ order, customer, onClose, onUpdate, user }) {
 
 function ServiceQueuePage({ user, isMgr }) {
   const [orders, setOrders] = useState([])
-  const [customers, setCustomers] = useState({})    // id -> customer obj from cache
+  const [customers, setCustomers] = useState({})
+  const [lsUsers, setLsUsers] = useState({})
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [showNew, setShowNew] = useState(false)
-  const [selected, setSelected] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
   const [filter, setFilter] = useState('open')
   const [search, setSearch] = useState('')
   const [lastSync, setLastSync] = useState(null)
@@ -2422,11 +2454,14 @@ function ServiceQueuePage({ user, isMgr }) {
   const fetchFromCache = async () => {
     const { data } = await sb.from('service_orders_cache').select('*').order('updated_at_ls', { ascending: false }).limit(500)
     setOrders(Array.isArray(data) ? data : [])
-    // pull customer cache too
-    const { data: custs } = await sb.from('lightspeed_customers_cache').select('*').limit(2000)
-    const map = {}
-    ;(custs || []).forEach(c => { map[c.id] = c })
-    setCustomers(map)
+    const { data: custs } = await sb.from('lightspeed_customers_cache').select('*').limit(5000)
+    const cmap = {}
+    ;(custs || []).forEach(c => { cmap[c.id] = c })
+    setCustomers(cmap)
+    const { data: usrs } = await sb.from('lightspeed_users_cache').select('*').limit(200)
+    const umap = {}
+    ;(usrs || []).forEach(u => { umap[u.id] = u })
+    setLsUsers(umap)
     setLoading(false)
   }
 
@@ -2441,28 +2476,46 @@ function ServiceQueuePage({ user, isMgr }) {
     setSyncing(false)
   }
 
+  const wipeAndResync = async () => {
+    if (!confirm('Wipe the local service order cache and re-sync from Lightspeed? This is safe but takes ~30 seconds.')) return
+    setSyncing(true); setErr('')
+    try {
+      await lsCall('lightspeed_wipe_cache')
+      const r = await lsCall('lightspeed_list_services')
+      if (r?.error) setErr(r.error)
+      setLastSync(new Date())
+      await fetchFromCache()
+    } catch (e) { setErr(e.message) }
+    setSyncing(false)
+  }
+
   useEffect(() => {
     fetchFromCache()
-    // auto-sync every 3 minutes while page is open
     const t = setInterval(() => sync(), 3 * 60 * 1000)
     return () => clearInterval(t)
   }, [])
 
-  const openStatuses = ['NEW', 'IN_PROGRESS', 'ON_HOLD', 'READY_FOR_PICKUP']
   const filtered = orders.filter(o => {
-    const status = o.status || 'NEW'
+    const statusLabel = o.raw?.status_details?.display_name || o.status || 'NEW'
+    const isOpen = SERVICE_OPEN_STATUSES(o.status, statusLabel)
     const matchFilter =
-      filter === 'open'   ? openStatuses.includes(status) :
-      filter === 'closed' ? !openStatuses.includes(status) :
+      filter === 'open'   ? isOpen :
+      filter === 'closed' ? !isOpen :
       true
     if (!search) return matchFilter
     const c = customers[o.customer_id]
     const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : ''
-    const blob = [name, c?.phone, c?.email, o.note, o.raw?.item_name, o.raw?.serial_number].filter(Boolean).join(' ').toLowerCase()
+    const blob = [name, c?.phone, c?.email, o.note, o.raw?.location, o.raw?.service_item?.serial_number, o.raw?.sale_invoice_number].filter(Boolean).join(' ').toLowerCase()
     return matchFilter && blob.includes(search.toLowerCase())
   })
 
+  const selected = orders.find(o => o.id === selectedId)
+
   const daysOpen = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null
+
+  // counts for tab labels
+  const openCount = orders.filter(o => SERVICE_OPEN_STATUSES(o.status, o.raw?.status_details?.display_name)).length
+  const closedCount = orders.length - openCount
 
   return (
     <div style={S.page}>
@@ -2470,9 +2523,12 @@ function ServiceQueuePage({ user, isMgr }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>🔧 Service Queue</div>
-          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>Live from Lightspeed · {orders.length} total {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+            Live from Lightspeed · {openCount} open, {closedCount} closed {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={wipeAndResync} disabled={syncing} style={{ ...S.btn, fontSize: 12 }} title="Clears local cache and re-pulls everything fresh">🗑️ Wipe & Resync</button>
           <button onClick={sync} disabled={syncing} style={{ ...S.btn }}>{syncing ? 'Syncing...' : '↻ Sync'}</button>
           <button onClick={() => setShowNew(true)} style={{ ...S.btn, ...S.btnP }}>+ New Service Order</button>
         </div>
@@ -2481,17 +2537,19 @@ function ServiceQueuePage({ user, isMgr }) {
       {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)', marginTop: 12 }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 8, margin: '18px 0 12px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <TabRow tabs={[['open', 'Open'], ['closed', 'Closed'], ['all', 'All']]} active={filter} setActive={setFilter} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, bike, serial..." style={{ ...S.input, maxWidth: 280 }} />
+        <TabRow tabs={[['open', `Open (${openCount})`], ['closed', `Closed (${closedCount})`], ['all', `All (${orders.length})`]]} active={filter} setActive={setFilter} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, bike, serial, invoice..." style={{ ...S.input, maxWidth: 280 }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 360px' : '1fr', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 400px' : '1fr', gap: 16, alignItems: 'flex-start' }}>
         <div>
           {loading ? (
             <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading...</div>
           ) : filtered.length === 0 ? (
             <div style={{ ...S.card, fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: 30 }}>
-              No service orders. Hit Sync to pull from Lightspeed, or + New to create one.
+              {orders.length === 0
+                ? 'No service orders yet. Hit Sync to pull from Lightspeed.'
+                : 'No service orders match this filter.'}
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -2499,28 +2557,42 @@ function ServiceQueuePage({ user, isMgr }) {
                 const c = customers[o.customer_id]
                 const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '(unknown customer)'
                 const phone = c?.phone || c?.mobile || ''
-                const status = o.status || 'NEW'
-                const sc = SERVICE_STATUS_COLOR[status] || 'var(--text2)'
+                const productDesc = o.raw?.location || ''
+                const statusLabel = o.raw?.status_details?.display_name || o.status || 'NEW'
+                const sc = SERVICE_STATUS_COLOR(statusLabel)
+                const assignedUser = lsUsers[o.raw?.assigned_user_id]
                 const days = daysOpen(o.created_at_ls)
-                const isSelected = selected?.id === o.id
+                const isSelected = selectedId === o.id
                 return (
                   <div
                     key={o.id}
-                    onClick={() => setSelected(o)}
-                    style={{ ...S.card, padding: '12px 16px', cursor: 'pointer', borderLeft: `3px solid ${sc}`, ...(isSelected ? { background: 'var(--bg3)', borderColor: 'var(--accent2)' } : {}) }}
+                    onClick={() => setSelectedId(isSelected ? null : o.id)}
+                    style={{
+                      ...S.card,
+                      padding: '12px 16px',
+                      cursor: 'pointer',
+                      borderLeft: `3px solid ${sc}`,
+                      transition: 'background 0.12s, border-color 0.12s',
+                      ...(isSelected ? { background: 'var(--bg3)', borderColor: 'var(--accent2)' } : {})
+                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
-                          <span style={S.badge(sc)}>{status.replace(/_/g, ' ')}</span>
-                          {days !== null && days >= 7 && <span style={S.badge('var(--amber)')}>⏱ {days}d open</span>}
-                        </div>
-                        <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 12, color: 'var(--text2)', flexWrap: 'wrap' }}>
-                          {o.raw?.item_name && <span>{o.raw.item_name}</span>}
-                          {phone && <span style={{ fontFamily: 'var(--mono)' }}>{phone}</span>}
-                          {o.created_at_ls && <span style={{ color: 'var(--text3)' }}>{fmtDate(o.created_at_ls)}</span>}
-                        </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                        {phone && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>{phone}</div>}
+                      </div>
+                      <div style={{ minWidth: 0, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {productDesc || <span style={{ color: 'var(--text3)' }}>—</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                        {assignedUser?.name || <span style={{ color: 'var(--text3)' }}>Unassigned</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                        {o.created_at_ls ? fmtDate(o.created_at_ls) : ''}
+                        {days !== null && days >= 7 && <div style={{ fontSize: 10, color: 'var(--amber)', fontFamily: 'var(--mono)' }}>{days}d open</div>}
+                      </div>
+                      <div>
+                        <span style={S.badge(sc)}>{statusLabel}</span>
                       </div>
                     </div>
                   </div>
@@ -2534,11 +2606,11 @@ function ServiceQueuePage({ user, isMgr }) {
           <ServiceOrderDetail
             order={selected}
             customer={customers[selected.customer_id]}
+            lsUser={lsUsers[selected.raw?.assigned_user_id]}
             user={user}
-            onClose={() => setSelected(null)}
+            onClose={() => setSelectedId(null)}
             onUpdate={(updated) => {
               setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))
-              setSelected(updated)
             }}
           />
         )}
