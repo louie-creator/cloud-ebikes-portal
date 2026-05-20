@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://qzdqggemowjwneiozpvt.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6ZHFnZ2Vtb3dqd25laW96cHZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMjg2MjksImV4cCI6MjA5MzcwNDYyOX0.gxi2Oo-GCl0AXkrUXXJbR5vYW5zbOC-fR2qUgGeH87Q'
+const SUPA_KEY = 'SUPA KEY'
 const WORKER_URL = 'https://twilight-pond-a691.louie-4b0.workers.dev/'
 const sb = createClient(SUPA_URL, SUPA_KEY)
 
@@ -2151,28 +2151,38 @@ Take action immediately when the request is clear. Confirm what you did after th
 
 // ── LIGHTSPEED SERVICE QUEUE ──
 
-// Status colors map both the API enum (NEW, IN_PROGRESS) and pretty display names
-// to colors. Lightspeed lets retailers add custom statuses (Awaiting Customer,
-// Awaiting Part, Service DONE, etc) so we color any unknown ones with a default.
-const SERVICE_STATUS_COLOR = (statusOrName) => {
-  const s = (statusOrName || '').toUpperCase().replace(/\s+/g, '_')
-  if (s === 'NEW' || s === 'SERVICE') return 'var(--amber)'
-  if (s === 'IN_PROGRESS' || s === 'IN_PROG') return 'var(--accent)'
-  if (s === 'AWAITING_PART' || s === 'AWAITING_PARTS') return 'var(--purple)'
-  if (s === 'AWAITING_CUSTOMER') return 'var(--purple)'
-  if (s === 'ON_HOLD' || s === 'HOLD') return 'var(--text3)'
-  if (s === 'READY_FOR_PICKUP' || s === 'READY') return 'var(--green)'
-  if (s === 'COMPLETED' || s === 'COMPLETE' || s === 'SERVICE_DONE' || s === 'DONE') return 'var(--green)'
-  if (s === 'CLOSED') return 'var(--text3)'
-  if (s === 'CANCELLED' || s === 'CANCELED') return 'var(--red)'
-  return 'var(--text2)'
+// Lightspeed status -> portal tab bucket
+// Buckets: 'new' | 'in_progress' | 'awaiting_customer' | 'waiting_pickup' | 'closed'
+// SERVICE / SERVICE_CLOSED in Lightspeed = paid and done -> closed
+// SERVICE_DONE = work complete, not paid yet -> waiting_pickup
+const SERVICE_STATUS_BUCKET = (statusOrName) => {
+  const s = (statusOrName || '').toUpperCase().replace(/\s+/g, '_').trim()
+  if (s === 'NEW') return 'new'
+  if (s === 'IN_PROGRESS' || s === 'IN_PROG') return 'in_progress'
+  if (s === 'AWAITING_CUSTOMER') return 'awaiting_customer'
+  if (s === 'AWAITING_PART' || s === 'AWAITING_PARTS') return 'in_progress'
+  if (s === 'SERVICE_DONE' || s === 'DONE' || s === 'READY_FOR_PICKUP' || s === 'READY') return 'waiting_pickup'
+  if (s === 'COMPLETED' || s === 'COMPLETE' || s === 'SERVICE' || s === 'SERVICE_CLOSED' || s === 'CLOSED') return 'closed'
+  if (s === 'CANCELLED' || s === 'CANCELED') return 'closed'
+  return 'new'   // unknown = treat as new so it shows up rather than hides
 }
 
-// "Open" set (anything not completed/closed/cancelled)
-const SERVICE_OPEN_STATUSES = (status, displayName) => {
-  const s = (displayName || status || '').toUpperCase().replace(/\s+/g, '_')
-  return !['COMPLETED', 'COMPLETE', 'SERVICE_DONE', 'DONE', 'CLOSED', 'CANCELLED', 'CANCELED'].includes(s)
+const SERVICE_STATUS_COLOR = (statusOrName) => {
+  const bucket = SERVICE_STATUS_BUCKET(statusOrName)
+  if (bucket === 'new') return 'var(--amber)'
+  if (bucket === 'in_progress') return 'var(--accent)'
+  if (bucket === 'awaiting_customer') return 'var(--purple)'
+  if (bucket === 'waiting_pickup') return 'var(--green)'
+  return 'var(--text3)'
 }
+
+const SERVICE_TABS = [
+  ['new',              'New'],
+  ['in_progress',      'In Progress'],
+  ['awaiting_customer','Awaiting Customer'],
+  ['waiting_pickup',   'Waiting for Pickup'],
+  ['closed',           'Closed'],
+]
 
 async function lsCall(action, payload = {}) {
   const res = await fetch(WORKER_URL, {
@@ -2339,27 +2349,67 @@ function NewServiceOrderModal({ onClose, onCreated }) {
   )
 }
 
-function ServiceOrderDetail({ order, customer, lsUser, onClose, onUpdate, user }) {
+// Inline-expanding service order row. Replaces the old side-panel detail view.
+// Click the chevron or anywhere on the row to expand details + messages.
+function ServiceRow({ order, customer, lsUser, user, isExpanded, onToggle, onUpdate }) {
   const [showSMS, setShowSMS] = useState(false)
   const [notes, setNotes] = useState(order.portal_notes || '')
-  const [saving, setSaving] = useState(false)
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [messages, setMessages] = useState([])
+  const [loadingMsgs, setLoadingMsgs] = useState(false)
+
+  useEffect(() => { setNotes(order.portal_notes || '') }, [order.portal_notes])
+
+  // Load messages when row expands
+  useEffect(() => {
+    if (!isExpanded) return
+    setLoadingMsgs(true)
+    sb.from('service_messages')
+      .select('*')
+      .eq('service_id', order.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => { setMessages(Array.isArray(data) ? data : []); setLoadingMsgs(false) })
+      .catch(() => setLoadingMsgs(false))
+  }, [isExpanded, order.id])
 
   const saveNotes = async () => {
-    setSaving(true)
+    if (notes === (order.portal_notes || '')) return
+    setSavingNotes(true)
     await sb.from('service_orders_cache').update({ portal_notes: notes }).eq('id', order.id)
     if (onUpdate) onUpdate({ ...order, portal_notes: notes })
-    setSaving(false)
+    setSavingNotes(false)
   }
 
   const phone = customer?.phone || customer?.mobile || ''
-  const name = customer ? [customer.first_name, customer.last_name].filter(Boolean).join(' ') : '(no customer)'
+  const name = customer ? [customer.first_name, customer.last_name].filter(Boolean).join(' ') : '(unknown customer)'
   const productDesc = order.raw?.location || ''
   const statusLabel = order.raw?.status_details?.display_name || order.status || 'NEW'
   const sc = SERVICE_STATUS_COLOR(statusLabel)
   const lsNotes = order.raw?.notes || []
   const item = order.raw?.service_item || {}
+  const days = order.created_at_ls ? Math.floor((Date.now() - new Date(order.created_at_ls)) / 86400000) : null
 
-  // fake build object so we can reuse SMSModal
+  // Log SMS sent through portal -> service_messages
+  const onSMSSent = async (smsResult) => {
+    const row = {
+      service_id: order.id,
+      customer_id: order.customer_id || null,
+      direction: 'out',
+      phone: smsResult?.to || phone,
+      body: smsResult?.body || '',
+      sent_by: user?.name || '',
+      twilio_sid: smsResult?.sid || '',
+      status: smsResult?.status || 'sent',
+    }
+    await sb.from('service_messages').insert(row)
+    await sb.from('service_orders_cache').update({ last_messaged: nowISO() }).eq('id', order.id)
+    // refresh local list
+    const { data } = await sb.from('service_messages').select('*').eq('service_id', order.id).order('created_at', { ascending: false }).limit(50)
+    setMessages(Array.isArray(data) ? data : [])
+  }
+
+  // SMSModal expects a "build" shape. Wrap order so it works for service orders.
   const fakeBuild = {
     id: order.id,
     customer_name: name,
@@ -2368,71 +2418,110 @@ function ServiceOrderDetail({ order, customer, lsUser, onClose, onUpdate, user }
   }
 
   return (
-    <div style={{ ...S.card, position: 'sticky', top: 20, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
-      {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={() => sb.from('service_orders_cache').update({ last_messaged: nowISO() }).eq('id', order.id)} />}
+    <div style={{ ...S.card, padding: 0, marginBottom: 6, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
+      {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={() => onSMSSent({ to: phone, body: '' })} />}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 2 }}>
-            SERVICE ORDER {order.raw?.sale_invoice_number ? `#${order.raw.sale_invoice_number}` : ''}
-          </div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>{name}</div>
-          {phone && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, fontFamily: 'var(--mono)' }}>{phone}</div>}
-          {customer?.email && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 1 }}>{customer.email}</div>}
+      {/* Collapsed row */}
+      <div onClick={onToggle} style={{ display: 'grid', gridTemplateColumns: '24px 1.4fr 1.6fr 1fr 0.9fr auto', gap: 12, alignItems: 'center', padding: '12px 16px', cursor: 'pointer' }}>
+        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+          {phone && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>{phone}</div>}
         </div>
-        <button onClick={onClose} style={{ ...S.btn, ...S.btnSm }}>✕</button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ minWidth: 0, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {productDesc || <span style={{ color: 'var(--text3)' }}>—</span>}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          {lsUser?.name || <span style={{ color: 'var(--text3)' }}>Unassigned</span>}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          {order.created_at_ls ? fmtDate(order.created_at_ls) : ''}
+          {days !== null && days >= 7 && <div style={{ fontSize: 10, color: 'var(--amber)', fontFamily: 'var(--mono)' }}>{days}d open</div>}
+        </div>
         <span style={S.badge(sc)}>{statusLabel}</span>
-        {order.portal_status && <span style={S.badge('var(--accent)')}>Portal: {order.portal_status}</span>}
       </div>
 
-      <div style={{ display: 'grid', gap: 8, fontSize: 13, padding: 12, background: 'var(--bg3)', borderRadius: 'var(--rs)', marginBottom: 14 }}>
-        {productDesc && (
-          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>BIKE</span><div style={{ fontWeight: 500, marginTop: 2 }}>{productDesc}</div></div>
-        )}
-        {item?.serial_number && (
-          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>SERIAL</span><div style={{ fontFamily: 'var(--mono)', marginTop: 2 }}>{item.serial_number}</div></div>
-        )}
-        {item?.description && (
-          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>DESCRIPTION</span><div style={{ marginTop: 2 }}>{item.description}</div></div>
-        )}
-        {item?.initial_condition && (
-          <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>INITIAL CONDITION</span><div style={{ marginTop: 2 }}>{item.initial_condition}</div></div>
-        )}
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', paddingTop: 4 }}>
-          {lsUser && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>ASSIGNED</span><div style={{ marginTop: 2 }}>{lsUser.name}</div></div>}
-          {order.created_at_ls && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>CREATED</span><div style={{ marginTop: 2 }}>{fmtDate(order.created_at_ls)}</div></div>}
-          {order.updated_at_ls && <div><span style={{ color: 'var(--text2)', fontSize: 11, fontFamily: 'var(--mono)' }}>UPDATED</span><div style={{ marginTop: 2 }}>{fmtDate(order.updated_at_ls)}</div></div>}
-        </div>
-      </div>
-
-      {lsNotes.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 6 }}>WORK NOTES FROM LIGHTSPEED</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {lsNotes.map((n, i) => (
-              <div key={i} style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12, borderLeft: '2px solid var(--accent)' }}>
-                <div style={{ marginBottom: 4 }}>{n.body || n.note || ''}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{n.created_at ? fmt(n.created_at) : ''}</div>
+      {/* Expanded panel */}
+      {isExpanded && (
+        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            {/* LEFT: details */}
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>DETAILS</div>
+              <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
+                {order.raw?.sale_invoice_number && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Invoice</span><span style={{ fontFamily: 'var(--mono)' }}>#{order.raw.sale_invoice_number}</span></div>
+                )}
+                {customer?.email && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Email</span><span>{customer.email}</span></div>
+                )}
+                {item?.serial_number && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Serial</span><span style={{ fontFamily: 'var(--mono)' }}>{item.serial_number}</span></div>
+                )}
+                {item?.description && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Description</span><span>{item.description}</span></div>
+                )}
+                {item?.initial_condition && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Condition</span><span>{item.initial_condition}</span></div>
+                )}
+                {order.updated_at_ls && (
+                  <div style={{ display: 'flex', gap: 8 }}><span style={{ color: 'var(--text2)', minWidth: 90 }}>Updated</span><span>{fmt(order.updated_at_ls)}</span></div>
+                )}
               </div>
-            ))}
+
+              {/* Lightspeed work notes */}
+              {lsNotes.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>WORK NOTES FROM LIGHTSPEED</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {lsNotes.map((n, i) => (
+                      <div key={i} style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12, borderLeft: '2px solid var(--accent)' }}>
+                        <div style={{ marginBottom: 4 }}>{n.body || n.note || ''}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>{n.created_at ? fmt(n.created_at) : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Portal-only notes */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PORTAL NOTES (NOT IN LIGHTSPEED)</div>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} style={{ ...S.textarea, minHeight: 60 }} placeholder="Internal notes only visible in the portal..." />
+                {savingNotes && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Saving...</div>}
+              </div>
+            </div>
+
+            {/* RIGHT: messages */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)' }}>MESSAGES</div>
+                <button onClick={(e) => { e.stopPropagation(); setShowSMS(true) }} disabled={!phone} style={{ ...S.btn, ...S.btnSm, ...S.btnP, opacity: phone ? 1 : 0.4 }}>📱 Send SMS</button>
+              </div>
+              {loadingMsgs ? (
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>Loading messages...</div>
+              ) : messages.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text3)', padding: 16, textAlign: 'center', background: 'var(--bg3)', borderRadius: 'var(--rs)' }}>
+                  No messages yet for this service order.{phone ? '' : ' Add a customer phone to enable SMS.'}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 6, maxHeight: 360, overflowY: 'auto' }}>
+                  {messages.map(m => (
+                    <div key={m.id} style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12, borderLeft: `2px solid ${m.direction === 'out' ? 'var(--accent)' : 'var(--green)'}` }}>
+                      <div style={{ marginBottom: 4 }}>{m.body || '(no body)'}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <span>{m.direction === 'out' ? '→ sent' : '← received'}</span>
+                        {m.sent_by && <span>by {m.sent_by}</span>}
+                        {m.created_at && <span>· {fmt(m.created_at)}</span>}
+                        {m.status && <span>· {m.status}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
-
-      <div>
-        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PORTAL NOTES (NOT IN LIGHTSPEED)</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} style={{ ...S.textarea, minHeight: 70 }} placeholder="Internal notes only visible in the portal..." />
-        {saving && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Saving...</div>}
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button onClick={() => setShowSMS(true)} disabled={!phone} style={{ ...S.btn, ...S.btnP, flex: 1, justifyContent: 'center', opacity: phone ? 1 : 0.4 }}>📱 Message Customer</button>
-      </div>
-      {order.last_messaged && (
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, textAlign: 'center' }}>Last messaged {fmt(order.last_messaged)}</div>
       )}
     </div>
   )
@@ -2445,20 +2534,20 @@ function ServiceQueuePage({ user, isMgr }) {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [showNew, setShowNew] = useState(false)
-  const [selectedId, setSelectedId] = useState(null)
-  const [filter, setFilter] = useState('open')
+  const [expandedId, setExpandedId] = useState(null)
+  const [tab, setTab] = useState('new')
   const [search, setSearch] = useState('')
   const [lastSync, setLastSync] = useState(null)
   const [err, setErr] = useState('')
 
   const fetchFromCache = async () => {
-    const { data } = await sb.from('service_orders_cache').select('*').order('updated_at_ls', { ascending: false }).limit(500)
+    const { data } = await sb.from('service_orders_cache').select('*').order('updated_at_ls', { ascending: false }).limit(1000)
     setOrders(Array.isArray(data) ? data : [])
-    const { data: custs } = await sb.from('lightspeed_customers_cache').select('*').limit(5000)
+    const { data: custs } = await sb.from('lightspeed_customers_cache').select('*').limit(10000)
     const cmap = {}
     ;(custs || []).forEach(c => { cmap[c.id] = c })
     setCustomers(cmap)
-    const { data: usrs } = await sb.from('lightspeed_users_cache').select('*').limit(200)
+    const { data: usrs } = await sb.from('lightspeed_users_cache').select('*').limit(500)
     const umap = {}
     ;(usrs || []).forEach(u => { umap[u.id] = u })
     setLsUsers(umap)
@@ -2477,7 +2566,7 @@ function ServiceQueuePage({ user, isMgr }) {
   }
 
   const wipeAndResync = async () => {
-    if (!confirm('Wipe the local service order cache and re-sync from Lightspeed? This is safe but takes ~30 seconds.')) return
+    if (!confirm('Wipe the local service order cache and re-sync from Lightspeed? Takes about 30 seconds.')) return
     setSyncing(true); setErr('')
     try {
       await lsCall('lightspeed_wipe_cache')
@@ -2495,36 +2584,34 @@ function ServiceQueuePage({ user, isMgr }) {
     return () => clearInterval(t)
   }, [])
 
+  // Bucket counts for tab labels
+  const counts = { new: 0, in_progress: 0, awaiting_customer: 0, waiting_pickup: 0, closed: 0 }
+  orders.forEach(o => {
+    const lbl = o.raw?.status_details?.display_name || o.status
+    const bucket = SERVICE_STATUS_BUCKET(lbl)
+    if (counts[bucket] !== undefined) counts[bucket]++
+  })
+
   const filtered = orders.filter(o => {
-    const statusLabel = o.raw?.status_details?.display_name || o.status || 'NEW'
-    const isOpen = SERVICE_OPEN_STATUSES(o.status, statusLabel)
-    const matchFilter =
-      filter === 'open'   ? isOpen :
-      filter === 'closed' ? !isOpen :
-      true
-    if (!search) return matchFilter
+    const lbl = o.raw?.status_details?.display_name || o.status
+    const bucket = SERVICE_STATUS_BUCKET(lbl)
+    if (bucket !== tab) return false
+    if (!search) return true
     const c = customers[o.customer_id]
     const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : ''
     const blob = [name, c?.phone, c?.email, o.note, o.raw?.location, o.raw?.service_item?.serial_number, o.raw?.sale_invoice_number].filter(Boolean).join(' ').toLowerCase()
-    return matchFilter && blob.includes(search.toLowerCase())
+    return blob.includes(search.toLowerCase())
   })
-
-  const selected = orders.find(o => o.id === selectedId)
-
-  const daysOpen = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null
-
-  // counts for tab labels
-  const openCount = orders.filter(o => SERVICE_OPEN_STATUSES(o.status, o.raw?.status_details?.display_name)).length
-  const closedCount = orders.length - openCount
 
   return (
     <div style={S.page}>
       {showNew && <NewServiceOrderModal onClose={() => setShowNew(false)} onCreated={() => sync()} />}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>🔧 Service Queue</div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
-            Live from Lightspeed · {openCount} open, {closedCount} closed {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}
+            Live from Lightspeed · {orders.length} total {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -2536,88 +2623,49 @@ function ServiceQueuePage({ user, isMgr }) {
 
       {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)', marginTop: 12 }}>{err}</div>}
 
-      <div style={{ display: 'flex', gap: 8, margin: '18px 0 12px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <TabRow tabs={[['open', `Open (${openCount})`], ['closed', `Closed (${closedCount})`], ['all', `All (${orders.length})`]]} active={filter} setActive={setFilter} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, bike, serial, invoice..." style={{ ...S.input, maxWidth: 280 }} />
+      <div style={{ display: 'flex', gap: 8, margin: '18px 0 8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <TabRow tabs={SERVICE_TABS.map(([k, lbl]) => [k, `${lbl} (${counts[k] || 0})`])} active={tab} setActive={setTab} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, bike, serial, invoice..." style={{ ...S.input, maxWidth: 280, marginLeft: 'auto' }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 400px' : '1fr', gap: 16, alignItems: 'flex-start' }}>
-        <div>
-          {loading ? (
-            <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading...</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ ...S.card, fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: 30 }}>
-              {orders.length === 0
-                ? 'No service orders yet. Hit Sync to pull from Lightspeed.'
-                : 'No service orders match this filter.'}
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {filtered.map(o => {
-                const c = customers[o.customer_id]
-                const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '(unknown customer)'
-                const phone = c?.phone || c?.mobile || ''
-                const productDesc = o.raw?.location || ''
-                const statusLabel = o.raw?.status_details?.display_name || o.status || 'NEW'
-                const sc = SERVICE_STATUS_COLOR(statusLabel)
-                const assignedUser = lsUsers[o.raw?.assigned_user_id]
-                const days = daysOpen(o.created_at_ls)
-                const isSelected = selectedId === o.id
-                return (
-                  <div
-                    key={o.id}
-                    onClick={() => setSelectedId(isSelected ? null : o.id)}
-                    style={{
-                      ...S.card,
-                      padding: '12px 16px',
-                      cursor: 'pointer',
-                      borderLeft: `3px solid ${sc}`,
-                      transition: 'background 0.12s, border-color 0.12s',
-                      ...(isSelected ? { background: 'var(--bg3)', borderColor: 'var(--accent2)' } : {})
-                    }}
-                  >
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                        {phone && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>{phone}</div>}
-                      </div>
-                      <div style={{ minWidth: 0, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {productDesc || <span style={{ color: 'var(--text3)' }}>—</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                        {assignedUser?.name || <span style={{ color: 'var(--text3)' }}>Unassigned</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                        {o.created_at_ls ? fmtDate(o.created_at_ls) : ''}
-                        {days !== null && days >= 7 && <div style={{ fontSize: 10, color: 'var(--amber)', fontFamily: 'var(--mono)' }}>{days}d open</div>}
-                      </div>
-                      <div>
-                        <span style={S.badge(sc)}>{statusLabel}</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '24px 1.4fr 1.6fr 1fr 0.9fr auto', gap: 12, padding: '6px 16px', fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        <div></div>
+        <div>Customer</div>
+        <div>Bike / Item</div>
+        <div>Assigned</div>
+        <div>Date</div>
+        <div>Status</div>
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ ...S.card, fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: 30 }}>
+          {orders.length === 0
+            ? 'No service orders yet. Hit Sync to pull from Lightspeed.'
+            : 'No service orders in this tab.'}
         </div>
-
-        {selected && (
-          <ServiceOrderDetail
-            order={selected}
-            customer={customers[selected.customer_id]}
-            lsUser={lsUsers[selected.raw?.assigned_user_id]}
-            user={user}
-            onClose={() => setSelectedId(null)}
-            onUpdate={(updated) => {
-              setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))
-            }}
-          />
-        )}
-      </div>
+      ) : (
+        <div>
+          {filtered.map(o => (
+            <ServiceRow
+              key={o.id}
+              order={o}
+              customer={customers[o.customer_id]}
+              lsUser={lsUsers[o.raw?.assigned_user_id]}
+              user={user}
+              isExpanded={expandedId === o.id}
+              onToggle={() => setExpandedId(expandedId === o.id ? null : o.id)}
+              onUpdate={(updated) => setOrders(prev => prev.map(x => x.id === updated.id ? updated : x))}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
+
 
 // ── MAIN APP ──
 
