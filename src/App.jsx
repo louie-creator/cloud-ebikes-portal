@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://qzdqggemowjwneiozpvt.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6ZHFnZ2Vtb3dqd25laW96cHZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMjg2MjksImV4cCI6MjA5MzcwNDYyOX0.gxi2Oo-GCl0AXkrUXXJbR5vYW5zbOC-fR2qUgGeH87Q'
+const SUPA_KEY = 'SUPA KEY'
 const WORKER_URL = 'https://twilight-pond-a691.louie-4b0.workers.dev/'
 const sb = createClient(SUPA_URL, SUPA_KEY)
 
@@ -764,6 +764,7 @@ function Sidebar({ user, page, setPage, unread, onLock, pendingBuilds }) {
         {L('Store')}
         {N('announcements', 'Announcements', '📢')}
         {N('builds', 'Bike Builds', '🔨', pendingBuilds, 'var(--amber)')}
+        {N('service-queue', 'Service Queue', '🔧')}
         {N('templates', 'Message Templates', '💬')}
         {N('parts', 'Parts to Order', '🔩')}
         {N('bikes', 'Bikes to Order', '🚲')}
@@ -2148,6 +2149,404 @@ Take action immediately when the request is clear. Confirm what you did after th
   )
 }
 
+// ── LIGHTSPEED SERVICE QUEUE ──
+
+const SERVICE_STATUSES = ['NEW', 'IN_PROGRESS', 'ON_HOLD', 'READY_FOR_PICKUP', 'COMPLETED', 'CANCELLED']
+const SERVICE_STATUS_COLOR = {
+  'NEW': 'var(--amber)',
+  'IN_PROGRESS': 'var(--accent)',
+  'ON_HOLD': 'var(--text3)',
+  'READY_FOR_PICKUP': 'var(--green)',
+  'COMPLETED': 'var(--text3)',
+  'CANCELLED': 'var(--red)',
+}
+
+async function lsCall(action, payload = {}) {
+  const res = await fetch(WORKER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }),
+  })
+  return res.json()
+}
+
+function ServiceCustomerPicker({ onPick, onCancel }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', email: '' })
+  const [err, setErr] = useState('')
+
+  const search = async () => {
+    if (!q.trim()) return
+    setSearching(true); setErr('')
+    try {
+      const r = await lsCall('lightspeed_search_customers', { query: q.trim() })
+      const list = r?.data?.data || r?.data || []
+      setResults(Array.isArray(list) ? list : [])
+    } catch (e) { setErr(e.message) }
+    setSearching(false)
+  }
+
+  const createCustomer = async () => {
+    if (!form.first_name && !form.last_name) { setErr('Need at least a first or last name.'); return }
+    setCreating(true); setErr('')
+    try {
+      const r = await lsCall('lightspeed_create_customer', form)
+      const cust = r?.data?.data || r?.data
+      if (cust?.id) onPick(cust)
+      else setErr('Failed to create customer.')
+    } catch (e) { setErr(e.message) }
+    setCreating(false)
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>SEARCH CUSTOMER (NAME, PHONE, OR EMAIL)</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()} placeholder="e.g. Jane Smith or 604-555-1234" style={{ ...S.input, flex: 1 }} />
+          <button onClick={search} disabled={searching} style={{ ...S.btn, ...S.btnP }}>{searching ? '...' : 'Search'}</button>
+        </div>
+      </div>
+
+      {results.length > 0 && (
+        <div style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+          {results.map(c => (
+            <button key={c.id} onClick={() => onPick(c)} style={{ ...S.btn, justifyContent: 'flex-start', textAlign: 'left', padding: '10px 12px' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)'}</div>
+                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)' }}>{c.phone || c.mobile || ''} {c.email ? '· ' + c.email : ''}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>OR CREATE NEW CUSTOMER</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} placeholder="First name" style={S.input} />
+          <input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} placeholder="Last name" style={S.input} />
+          <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Phone" style={S.input} />
+          <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email (optional)" style={S.input} />
+        </div>
+        <button onClick={createCustomer} disabled={creating} style={{ ...S.btn, ...S.btnP, marginTop: 10, width: '100%', justifyContent: 'center' }}>{creating ? 'Creating...' : '+ Create Customer'}</button>
+      </div>
+
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)' }}>{err}</div>}
+      <button onClick={onCancel} style={S.btn}>Cancel</button>
+    </div>
+  )
+}
+
+function NewServiceOrderModal({ onClose, onCreated }) {
+  const [step, setStep] = useState('customer')   // customer | bike
+  const [customer, setCustomer] = useState(null)
+  const [form, setForm] = useState({
+    item_name: '',
+    serial_number: '',
+    description: '',
+    initial_condition: '',
+    location: '',
+    note: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async () => {
+    if (!customer?.id) { setErr('Pick a customer first.'); return }
+    setSaving(true); setErr('')
+    try {
+      const payload = {
+        customer_id: customer.id,
+        location: form.location || undefined,
+        item: (form.item_name || form.serial_number || form.description) ? {
+          item_name: form.item_name || undefined,
+          serial_number: form.serial_number || undefined,
+          description: form.description || undefined,
+          initial_condition: form.initial_condition || undefined,
+        } : undefined,
+        notes: form.note ? [{ body: form.note, is_visible_to_customer: false }] : undefined,
+      }
+      const r = await lsCall('lightspeed_create_service', payload)
+      if (r?.error || r?.status >= 400) {
+        setErr(r.error || r?.data?.errors?.[0]?.message || 'Failed to create.')
+        setSaving(false); return
+      }
+      if (onCreated) onCreated(r?.data?.data)
+      onClose()
+    } catch (e) { setErr(e.message); setSaving(false) }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: 20 }}>
+      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>🔧 New Service Order</div>
+          <button onClick={onClose} style={{ ...S.btn, ...S.btnSm }}>✕</button>
+        </div>
+
+        {step === 'customer' && (
+          <>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>Step 1 of 2 · Find or create the customer in Lightspeed</div>
+            <ServiceCustomerPicker
+              onPick={c => { setCustomer(c); setStep('bike') }}
+              onCancel={onClose}
+            />
+          </>
+        )}
+
+        {step === 'bike' && (
+          <>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Step 2 of 2 · Bike and issue details</div>
+            <div style={{ fontSize: 13, marginBottom: 14, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--rs)' }}>
+              👤 {[customer.first_name, customer.last_name].filter(Boolean).join(' ')} · {customer.phone || customer.mobile || customer.email || ''}
+            </div>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>BIKE / ITEM NAME</div><input value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })} placeholder="e.g. Aventon Pace 500.3 Step-Through" style={S.input} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>SERIAL NUMBER</div><input value={form.serial_number} onChange={e => setForm({ ...form, serial_number: e.target.value })} style={S.input} /></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>LOCATION IN STORE</div><input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="e.g. Service Bay 2" style={S.input} /></div>
+              </div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>DESCRIPTION</div><input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Color, size, other identifiers" style={S.input} /></div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>REPORTED ISSUE</div><textarea value={form.initial_condition} onChange={e => setForm({ ...form, initial_condition: e.target.value })} placeholder="What the customer is reporting..." style={{ ...S.textarea, minHeight: 70 }} /></div>
+              <div><div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>INTERNAL NOTES</div><textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Diagnostic notes, parts ordered, etc." style={{ ...S.textarea, minHeight: 60 }} /></div>
+              {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)' }}>{err}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={submit} disabled={saving} style={{ ...S.btn, ...S.btnP, flex: 1, justifyContent: 'center', opacity: saving ? 0.6 : 1 }}>{saving ? 'Creating...' : '✓ Create in Lightspeed'}</button>
+                <button onClick={() => setStep('customer')} style={S.btn}>Back</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ServiceOrderDetail({ order, customer, onClose, onUpdate, user }) {
+  const [showSMS, setShowSMS] = useState(false)
+  const [notes, setNotes] = useState(order.portal_notes || '')
+  const [saving, setSaving] = useState(false)
+
+  const saveNotes = async () => {
+    setSaving(true)
+    await sb.from('service_orders_cache').update({ portal_notes: notes }).eq('id', order.id)
+    if (onUpdate) onUpdate({ ...order, portal_notes: notes })
+    setSaving(false)
+  }
+
+  const updateStatus = async (newStatus) => {
+    await sb.from('service_orders_cache').update({ portal_status: newStatus }).eq('id', order.id)
+    if (onUpdate) onUpdate({ ...order, portal_status: newStatus })
+  }
+
+  const phone = customer?.phone || customer?.mobile || ''
+  const name = customer ? [customer.first_name, customer.last_name].filter(Boolean).join(' ') : '(no customer)'
+
+  // fake build object so we can reuse SMSModal
+  const fakeBuild = {
+    id: order.id,
+    customer_name: name,
+    customer_phone: phone,
+    bike_description: order.raw?.service_items?.[0]?.item_name || order.raw?.item_name || '',
+  }
+
+  return (
+    <div style={{ ...S.card, position: 'sticky', top: 20 }}>
+      {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={() => sb.from('service_orders_cache').update({ last_messaged: nowISO() }).eq('id', order.id)} />}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: 2 }}>SERVICE ORDER</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{name}</div>
+          {phone && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{phone}</div>}
+        </div>
+        <button onClick={onClose} style={{ ...S.btn, ...S.btnSm }}>✕</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={S.badge(SERVICE_STATUS_COLOR[order.status] || 'var(--text2)')}>{order.status || 'NEW'}</span>
+        {order.portal_status && <span style={S.badge('var(--accent)')}>{order.portal_status}</span>}
+      </div>
+
+      <div style={{ display: 'grid', gap: 10, fontSize: 13 }}>
+        {order.raw?.item_name && (
+          <div><span style={{ color: 'var(--text2)' }}>Bike: </span>{order.raw.item_name}</div>
+        )}
+        {order.raw?.serial_number && (
+          <div><span style={{ color: 'var(--text2)' }}>Serial: </span><span style={{ fontFamily: 'var(--mono)' }}>{order.raw.serial_number}</span></div>
+        )}
+        {order.note && (
+          <div style={{ padding: 10, background: 'var(--bg3)', borderRadius: 'var(--rs)', fontSize: 12 }}>{order.note}</div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>PORTAL STATUS</div>
+        <select value={order.portal_status || ''} onChange={e => updateStatus(e.target.value)} style={S.select}>
+          <option value="">(none)</option>
+          {SERVICE_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+        </select>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>INTERNAL NOTES (PORTAL ONLY)</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} style={{ ...S.textarea, minHeight: 70 }} placeholder="Diagnostic notes, who's working on it, etc." />
+        {saving && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Saving...</div>}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button onClick={() => setShowSMS(true)} disabled={!phone} style={{ ...S.btn, ...S.btnP, flex: 1, justifyContent: 'center', opacity: phone ? 1 : 0.4 }}>📱 Message Customer</button>
+      </div>
+      {order.last_messaged && (
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, textAlign: 'center' }}>Last messaged {fmt(order.last_messaged)}</div>
+      )}
+    </div>
+  )
+}
+
+function ServiceQueuePage({ user, isMgr }) {
+  const [orders, setOrders] = useState([])
+  const [customers, setCustomers] = useState({})    // id -> customer obj from cache
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [filter, setFilter] = useState('open')
+  const [search, setSearch] = useState('')
+  const [lastSync, setLastSync] = useState(null)
+  const [err, setErr] = useState('')
+
+  const fetchFromCache = async () => {
+    const { data } = await sb.from('service_orders_cache').select('*').order('updated_at_ls', { ascending: false }).limit(500)
+    setOrders(Array.isArray(data) ? data : [])
+    // pull customer cache too
+    const { data: custs } = await sb.from('lightspeed_customers_cache').select('*').limit(2000)
+    const map = {}
+    ;(custs || []).forEach(c => { map[c.id] = c })
+    setCustomers(map)
+    setLoading(false)
+  }
+
+  const sync = async () => {
+    setSyncing(true); setErr('')
+    try {
+      const r = await lsCall('lightspeed_list_services')
+      if (r?.error) setErr(r.error)
+      setLastSync(new Date())
+      await fetchFromCache()
+    } catch (e) { setErr(e.message) }
+    setSyncing(false)
+  }
+
+  useEffect(() => {
+    fetchFromCache()
+    // auto-sync every 3 minutes while page is open
+    const t = setInterval(() => sync(), 3 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  const openStatuses = ['NEW', 'IN_PROGRESS', 'ON_HOLD', 'READY_FOR_PICKUP']
+  const filtered = orders.filter(o => {
+    const status = o.status || 'NEW'
+    const matchFilter =
+      filter === 'open'   ? openStatuses.includes(status) :
+      filter === 'closed' ? !openStatuses.includes(status) :
+      true
+    if (!search) return matchFilter
+    const c = customers[o.customer_id]
+    const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : ''
+    const blob = [name, c?.phone, c?.email, o.note, o.raw?.item_name, o.raw?.serial_number].filter(Boolean).join(' ').toLowerCase()
+    return matchFilter && blob.includes(search.toLowerCase())
+  })
+
+  const daysOpen = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null
+
+  return (
+    <div style={S.page}>
+      {showNew && <NewServiceOrderModal onClose={() => setShowNew(false)} onCreated={() => sync()} />}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 600 }}>🔧 Service Queue</div>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>Live from Lightspeed · {orders.length} total {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={sync} disabled={syncing} style={{ ...S.btn }}>{syncing ? 'Syncing...' : '↻ Sync'}</button>
+          <button onClick={() => setShowNew(true)} style={{ ...S.btn, ...S.btnP }}>+ New Service Order</button>
+        </div>
+      </div>
+
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 10px', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--rs)', marginTop: 12 }}>{err}</div>}
+
+      <div style={{ display: 'flex', gap: 8, margin: '18px 0 12px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <TabRow tabs={[['open', 'Open'], ['closed', 'Closed'], ['all', 'All']]} active={filter} setActive={setFilter} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, bike, serial..." style={{ ...S.input, maxWidth: 280 }} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 360px' : '1fr', gap: 16, alignItems: 'flex-start' }}>
+        <div>
+          {loading ? (
+            <div style={{ fontSize: 13, color: 'var(--text2)', padding: 20 }}>Loading...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ ...S.card, fontSize: 13, color: 'var(--text2)', textAlign: 'center', padding: 30 }}>
+              No service orders. Hit Sync to pull from Lightspeed, or + New to create one.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {filtered.map(o => {
+                const c = customers[o.customer_id]
+                const name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '(unknown customer)'
+                const phone = c?.phone || c?.mobile || ''
+                const status = o.status || 'NEW'
+                const sc = SERVICE_STATUS_COLOR[status] || 'var(--text2)'
+                const days = daysOpen(o.created_at_ls)
+                const isSelected = selected?.id === o.id
+                return (
+                  <div
+                    key={o.id}
+                    onClick={() => setSelected(o)}
+                    style={{ ...S.card, padding: '12px 16px', cursor: 'pointer', borderLeft: `3px solid ${sc}`, ...(isSelected ? { background: 'var(--bg3)', borderColor: 'var(--accent2)' } : {}) }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
+                          <span style={S.badge(sc)}>{status.replace(/_/g, ' ')}</span>
+                          {days !== null && days >= 7 && <span style={S.badge('var(--amber)')}>⏱ {days}d open</span>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 12, color: 'var(--text2)', flexWrap: 'wrap' }}>
+                          {o.raw?.item_name && <span>{o.raw.item_name}</span>}
+                          {phone && <span style={{ fontFamily: 'var(--mono)' }}>{phone}</span>}
+                          {o.created_at_ls && <span style={{ color: 'var(--text3)' }}>{fmtDate(o.created_at_ls)}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {selected && (
+          <ServiceOrderDetail
+            order={selected}
+            customer={customers[selected.customer_id]}
+            user={user}
+            onClose={() => setSelected(null)}
+            onUpdate={(updated) => {
+              setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))
+              setSelected(updated)
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── MAIN APP ──
 
 export default function App() {
@@ -2251,6 +2650,7 @@ export default function App() {
         <P id="timeclock"><TimeclockPage user={user} isMgr={isMgr} users={users} /></P>
         <P id="messages"><SendPage user={user} messages={messages} users={users} onSend={sendMsg} onRead={readMsg} /></P>
         <P id="builds"><BuildsPage user={user} users={users} builds={builds} onAdd={addBuild} onUpdate={updateBuild} onDelete={deleteBuild} /></P>
+        <P id="service-queue"><ServiceQueuePage user={user} isMgr={isMgr} /></P>
         <P id="templates"><TemplatesPage isMgr={isMgr} /></P>
         <P id="parts"><PartsPage user={user} parts={parts} onAdd={addPart} onToggle={togglePart} onDelete={deletePart} isMgr={isMgr} /></P>
         <P id="bikes"><BikesPage user={user} bikes={bikes} onAdd={addBike} onToggle={toggleBike} onDelete={deleteBike} isMgr={isMgr} /></P>
