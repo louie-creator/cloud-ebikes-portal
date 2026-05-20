@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://qzdqggemowjwneiozpvt.supabase.co'
-const SUPA_KEY = 'SUPA KEY'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6ZHFnZ2Vtb3dqd25laW96cHZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMjg2MjksImV4cCI6MjA5MzcwNDYyOX0.gxi2Oo-GCl0AXkrUXXJbR5vYW5zbOC-fR2qUgGeH87Q'
 const WORKER_URL = 'https://twilight-pond-a691.louie-4b0.workers.dev/'
 const sb = createClient(SUPA_URL, SUPA_KEY)
 
