@@ -410,12 +410,21 @@ function SMSModal({ build, onClose, onSent }) {
     if (!message.trim()) { setErr('Please write a message.'); return }
     setSending(true); setErr('')
     try {
-      const res = await fetch(WORKER_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'sms', to: formatPhone(phone), message }) })
+      const formattedPhone = formatPhone(phone)
+      const res = await fetch(WORKER_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'sms', to: formattedPhone, message }) })
       const data = await res.json()
       if (data.error_code || data.status === 'failed') { setErr('Failed: ' + (data.message || 'Unknown error')); setSending(false); return }
-      if (phone !== build.customer_phone) await sb.from('builds').update({ customer_phone: phone }).eq('id', build.id)
-      await sb.from('builds').update({ contact_status: 'Customer Notified', last_contacted: nowISO() }).eq('id', build.id)
-      setSent(true); if (onSent) onSent(); setTimeout(() => onClose(), 1800)
+      // Only update builds table if this is a real build (not a synthetic one wrapping a service order)
+      // Service orders have build.id starting with a UUID format (36 chars w/ dashes), builds use short random IDs
+      const isBuild = build.id && build.id.length <= 10
+      if (isBuild) {
+        if (phone !== build.customer_phone) await sb.from('builds').update({ customer_phone: phone }).eq('id', build.id)
+        await sb.from('builds').update({ contact_status: 'Customer Notified', last_contacted: nowISO() }).eq('id', build.id)
+      }
+      setSent(true)
+      // Pass message data back to caller so it can log to the right table
+      if (onSent) onSent({ to: formattedPhone, body: message, sid: data.sid, status: data.status })
+      setTimeout(() => onClose(), 1800)
     } catch (e) { setErr('Error: ' + e.message); setSending(false) }
   }
   return (
@@ -2152,9 +2161,10 @@ Take action immediately when the request is clear. Confirm what you did after th
 // ── LIGHTSPEED SERVICE QUEUE ──
 
 // Lightspeed status -> portal tab bucket
-// Buckets: 'new' | 'in_progress' | 'awaiting_customer' | 'waiting_pickup' | 'closed'
+// Buckets: 'new' | 'in_progress' | 'awaiting_customer' | 'waiting_pickup' | 'closed' | 'ignore'
 // SERVICE / SERVICE_CLOSED in Lightspeed = paid and done -> closed
 // SERVICE_DONE = work complete, not paid yet -> waiting_pickup
+// LAYBY / SAVED / VOIDED / DISPATCHED etc = NOT service orders, ignore
 const SERVICE_STATUS_BUCKET = (statusOrName) => {
   const s = (statusOrName || '').toUpperCase().replace(/\s+/g, '_').trim()
   if (s === 'NEW') return 'new'
@@ -2164,7 +2174,8 @@ const SERVICE_STATUS_BUCKET = (statusOrName) => {
   if (s === 'SERVICE_DONE' || s === 'DONE' || s === 'READY_FOR_PICKUP' || s === 'READY') return 'waiting_pickup'
   if (s === 'COMPLETED' || s === 'COMPLETE' || s === 'SERVICE' || s === 'SERVICE_CLOSED' || s === 'CLOSED') return 'closed'
   if (s === 'CANCELLED' || s === 'CANCELED') return 'closed'
-  return 'new'   // unknown = treat as new so it shows up rather than hides
+  // Everything else (LAYBY, SAVED, VOIDED, DISPATCHED, etc) is not a service order
+  return 'ignore'
 }
 
 const SERVICE_STATUS_COLOR = (statusOrName) => {
@@ -2419,7 +2430,7 @@ function ServiceRow({ order, customer, lsUser, user, isExpanded, onToggle, onUpd
 
   return (
     <div style={{ ...S.card, padding: 0, marginBottom: 6, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
-      {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={() => onSMSSent({ to: phone, body: '' })} />}
+      {showSMS && <SMSModal build={fakeBuild} onClose={() => setShowSMS(false)} onSent={(smsData) => onSMSSent(smsData)} />}
 
       {/* Collapsed row */}
       <div onClick={onToggle} style={{ display: 'grid', gridTemplateColumns: '24px 1.4fr 1.6fr 1fr 0.9fr auto', gap: 12, alignItems: 'center', padding: '12px 16px', cursor: 'pointer' }}>
@@ -2611,7 +2622,7 @@ function ServiceQueuePage({ user, isMgr }) {
         <div>
           <div style={{ fontSize: 22, fontWeight: 600 }}>🔧 Service Queue</div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
-            Live from Lightspeed · {orders.length} total {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}
+            Live from Lightspeed · {(counts.new + counts.in_progress + counts.awaiting_customer + counts.waiting_pickup + counts.closed)} service orders {lastSync && `· synced ${fmtTime(lastSync.toISOString())}`}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
